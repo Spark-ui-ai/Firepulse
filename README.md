@@ -31,12 +31,12 @@ Each detection includes its location, the time it was recorded, brightness tempe
 ## ⚙️ How It Works
 
 ```
-Browser (firepulse.html)  ──►  server.py (local proxy)  ──►  NASA FIRMS Area API
+Browser (firepulse.html)  ──►  server_3.py (hardened proxy)  ──►  NASA FIRMS Area API
         ▲                          │  • CSV → JSON                │
         └──────── JSON ────────────┘  • 5-day chunking ◄── CSV ───┘
 ```
 
-The FIRMS API does not allow browser (CORS) requests, and its Area API only returns CSV. `server.py` is a small proxy written with only the Python standard library. It:
+The FIRMS API does not allow browser (CORS) requests, and its Area API only returns CSV. `server_3.py` is a hardened proxy written with only the Python standard library. It accepts the MAP_KEY only through the `X-FIRMS-MAP-KEY` request header (never in the URL), validates inputs, and applies bounded concurrency, response-size limits and request deadlines. It:
 
 1. Serves the dashboard at `/`.
 2. Forwards requests sent to `/firms-api/area/...` on to FIRMS as **CSV** requests.
@@ -71,7 +71,7 @@ Flagged days glow in the calendar and are listed with their z-score and how many
 ```bash
 git clone https://github.com/<your-username>/<your-repo>.git
 cd <your-repo>
-python server.py
+python server_3.py
 ```
 
 Then open **http://localhost:8080** in your browser.
@@ -97,7 +97,8 @@ The server reads Render's `PORT` environment variable and exposes `/health` for 
 ## 📁 Project Structure
 
 ```
-├── server.py          # Static file server + NASA FIRMS CORS proxy (stdlib only)
+├── server_3.py        # Hardened static file server + NASA FIRMS proxy (stdlib only)
+├── server.py          # Earlier server implementation (legacy)
 ├── firepulse.html     # Dashboard (Leaflet, Leaflet.draw, Leaflet.heat, Chart.js via CDN)
 ├── requirements.txt   # Empty: no dependencies
 ├── render.yaml        # Render Blueprint deployment config
