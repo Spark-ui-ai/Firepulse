@@ -2,14 +2,15 @@
 FirePulse server - serves the dashboard and proxies NASA FIRMS Area API requests (avoids CORS).
 Usage: python server_3.py     then open http://localhost:8080/
 
-Proxy contract (unchanged for the frontend):
-  GET /firms-api/area/json/<KEY>/<SOURCE>/<west,south,east,north>/<DAYS>/<YYYY-MM-DD>
+Proxy contract (Step 1B):
+  GET /firms-api/area/json/<SOURCE>/<west,south,east,north>/<DAYS>/<YYYY-MM-DD>
+  X-FIRMS-MAP-KEY: <MAP_KEY>
   -> JSON array of detections with numeric fields cast.
 
 Step 1A hardening (see comments next to each constant):
   * Only /, /firepulse.html and /health are served; no other file is reachable.
   * Every path component is validated BEFORE it is placed in an upstream URL.
-  * Upstream text is never echoed to clients or logs, so a MAP_KEY cannot leak that way.
+  * MAP_KEY is accepted only in X-FIRMS-MAP-KEY, never in the request URL.
   * Global cap on upstream concurrency, in-flight requests, response size and time.
   * A failed chunk fails the whole request (no silent gaps in the data).
 """
@@ -196,7 +197,7 @@ def classify_http_status(code):
 
 
 def fetch_upstream(url):
-    """Download one chunk as text. The URL contains the MAP_KEY: never log or echo it or its errors."""
+    """Download one chunk as text. Never log or echo upstream URLs or errors."""
     req = urllib.request.Request(url, headers={'User-Agent': 'FirePulse/1.0'})
     deadline = time.monotonic() + UPSTREAM_TIMEOUT
     try:
@@ -327,16 +328,19 @@ class FirePulseHandler(http.server.BaseHTTPRequestHandler):
                    dict({'Cache-Control': 'no-store'}, **(extra or {})))
 
     def proxy_firms(self, path):
-        # area/<fmt>/<KEY>/<SOURCE>/<AREA>/<DAYS>[/<DATE>]
+        # area/<fmt>/<SOURCE>/<AREA>/<DAYS>[/<DATE>]; MAP_KEY is header-only.
         parts = path[len('/firms-api/'):].strip('/').split('/')
-        if len(parts) not in (6, 7) or parts[0] != 'area':
-            return self._send_text(400, 'Expected /firms-api/area/json/<KEY>/<SOURCE>/<AREA>/<DAYS>/<DATE>')
-        _, fmt, key, source, area, days_s = parts[:6]
-        date_s = parts[6] if len(parts) == 7 else None
+        if len(parts) not in (5, 6) or parts[0] != 'area':
+            return self._send_text(400, 'Expected /firms-api/area/json/<SOURCE>/<AREA>/<DAYS>/<DATE>')
+        _, fmt, source, area, days_s = parts[:5]
+        date_s = parts[5] if len(parts) == 6 else None
+        key = self.headers.get('X-FIRMS-MAP-KEY', '').strip()
 
         try:
             if fmt not in ALLOWED_FORMATS:
                 raise BadRequest('Only the json format is supported')
+            if not key:
+                raise BadRequest('Missing NASA FIRMS API key header (X-FIRMS-MAP-KEY)')
             validate_key(key)
             if source not in ALLOWED_SOURCES and source not in DISCONTINUED_SOURCES:
                 raise BadRequest('Unsupported sensor')
