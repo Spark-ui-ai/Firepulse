@@ -1528,11 +1528,14 @@ function renderMap() {
       });
 
     const zoom = map.getZoom();
-    const radius = zoom <= 4 ? 26 : zoom <= 7 ? 21 : 15;
+    // Keep continental views geographically crisp; retain the existing
+    // stronger footprint as users zoom in.
+    const continentalZoom = zoom <= 4;
+    const radius = continentalZoom ? 16 : zoom <= 7 ? 21 : 15;
     heatLayer = L.heatLayer(heatPoints, {
       radius,
-      blur: Math.round(radius * 0.8),
-      minOpacity: 0.38,
+      blur: continentalZoom ? 12 : Math.round(radius * 0.8),
+      minOpacity: continentalZoom ? 0.32 : 0.38,
       max: 1,
       maxZoom: 8,
       gradient: {
@@ -1543,6 +1546,12 @@ function renderMap() {
         1.0: '#ffb347',
       }
     }).addTo(map);
+
+    // leaflet.heat does not expose a maxOpacity option. Apply the requested
+    // visual alpha cap directly to its canvas for continental-scale views.
+    if (continentalZoom && heatLayer._canvas) {
+      heatLayer._canvas.style.opacity = '0.75';
+    }
     return;
   }
 
