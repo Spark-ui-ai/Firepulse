@@ -1,0 +1,1825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FirePulse — Burning Activity Calendar</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Leaflet Draw -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Leaflet Heat -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-raised: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #484f58;
+    --ember: #f85149;
+    --ember-glow: #ff6a33;
+    --amber: #f0883e;
+    --warm: #d29922;
+    --cool: #388bfd;
+    --green: #3fb950;
+    --radius: 8px;
+    --font: 'DM Sans', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Top Bar ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+  }
+
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .topbar-brand svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .topbar-brand h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+
+  .topbar-brand span {
+    color: var(--ember);
+  }
+
+  .topbar-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    display: inline-block;
+    margin-right: 4px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Layout ── */
+  .app-layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: 1fr;
+    height: calc(100vh - 53px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .panel {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 12px;
+  }
+
+  .api-key-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .api-key-input:focus {
+    border-color: var(--ember);
+  }
+
+  .api-key-input::placeholder {
+    color: var(--text-dim);
+  }
+
+  .sensor-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .sensor-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 13px;
+  }
+
+  .sensor-toggle:hover {
+    border-color: var(--text-dim);
+  }
+
+  .sensor-toggle.active {
+    border-color: var(--ember);
+    background: rgba(248, 81, 73, 0.08);
+  }
+
+  .sensor-toggle input {
+    display: none;
+  }
+
+  .sensor-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s;
+  }
+
+  .sensor-toggle.active .sensor-check {
+    background: var(--ember);
+    border-color: var(--ember);
+  }
+
+  .sensor-check svg {
+    width: 10px;
+    height: 10px;
+    color: white;
+    opacity: 0;
+  }
+
+  .sensor-toggle.active .sensor-check svg {
+    opacity: 1;
+  }
+
+  .sensor-name {
+    flex: 1;
+    color: var(--text);
+  }
+
+  .sensor-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text-dim);
+  }
+
+  .date-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .date-field {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .date-field label {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .date-field input {
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    outline: none;
+    color-scheme: dark;
+  }
+
+  .date-field input:focus {
+    border-color: var(--ember);
+  }
+
+  .btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .btn-primary {
+    background: var(--ember);
+    color: white;
+    width: 100%;
+  }
+
+  .btn-primary:hover {
+    background: var(--ember-glow);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: var(--surface-raised);
+    color: var(--text);
+    border: 1px solid var(--border);
+    width: 100%;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--text-dim);
+  }
+
+  .area-info {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: var(--bg);
+    border-radius: 6px;
+    font-family: var(--mono);
+  }
+
+  .area-coords {
+    color: var(--warm);
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--bg);
+    border-radius: 2px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .progress-bar.active { display: block; }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--ember), var(--amber));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat-card {
+    padding: 12px;
+    background: var(--bg);
+    border-radius: 6px;
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .stat-value.ember { color: var(--ember); }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.cool { color: var(--cool); }
+  .stat-value.green { color: var(--green); }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* ── Main Content ── */
+  .main-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .map-container {
+    height: 50%;
+    min-height: 300px;
+    position: relative;
+  }
+
+  #map {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+  }
+
+  .map-overlay {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 800;
+    display: flex;
+    gap: 8px;
+  }
+
+  .map-chip {
+    padding: 6px 12px;
+    background: rgba(22, 27, 34, 0.9);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  .map-chip strong {
+    color: var(--ember);
+  }
+
+  /* ── Dashboard Panels ── */
+  .dashboard {
+    height: 50%;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .dashboard-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .dash-tab {
+    flex: 1;
+    padding: 8px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .dash-tab.active {
+    background: var(--surface-raised);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+
+  .chart-panel {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    min-height: 200px;
+    display: none;
+  }
+
+  .chart-panel.active {
+    display: block;
+  }
+
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .chart-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .chart-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 220px;
+  }
+
+  /* Calendar heatmap */
+  .calendar-heatmap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .heatmap-grid {
+    display: flex;
+    gap: 3px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .heatmap-week {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .heatmap-cell {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background: var(--surface-raised);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+
+  .heatmap-cell:hover {
+    border-color: var(--text-dim);
+    transform: scale(1.3);
+    z-index: 10;
+  }
+
+  .heatmap-cell[data-level="1"] { background: #2d1616; }
+  .heatmap-cell[data-level="2"] { background: #5a1a1a; }
+  .heatmap-cell[data-level="3"] { background: #8b2020; }
+  .heatmap-cell[data-level="4"] { background: #c93030; }
+  .heatmap-cell[data-level="5"] { background: #f85149; box-shadow: 0 0 6px rgba(248,81,73,0.3); }
+
+  .heatmap-cell.anomaly {
+    box-shadow: 0 0 8px rgba(248,81,73,0.6);
+    animation: glow 1.5s ease-in-out infinite;
+  }
+
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 8px rgba(248,81,73,0.6); }
+    50% { box-shadow: 0 0 14px rgba(248,81,73,0.9); }
+  }
+
+  .heatmap-labels {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-right: 6px;
+  }
+
+  .heatmap-day-label {
+    height: 14px;
+    font-size: 9px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    font-family: var(--mono);
+  }
+
+  .heatmap-months {
+    display: flex;
+    gap: 3px;
+    margin-left: 30px;
+    margin-bottom: 4px;
+  }
+
+  .heatmap-month-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+
+  .heatmap-legend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .legend-cell {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+  }
+
+  .heatmap-tooltip {
+    position: fixed;
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text);
+    pointer-events: none;
+    z-index: 9999;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+
+  .heatmap-tooltip strong {
+    color: var(--ember);
+  }
+
+  /* Anomaly list */
+  .anomaly-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .anomaly-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border-radius: 6px;
+    border-left: 3px solid var(--ember);
+  }
+
+  .anomaly-date {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--warm);
+    min-width: 80px;
+  }
+
+  .anomaly-desc {
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .anomaly-factor {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ember);
+    font-weight: 600;
+  }
+
+  /* ── Welcome State ── */
+  .welcome-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+  }
+
+  .welcome-overlay svg {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 20px;
+    opacity: 0.3;
+  }
+
+  .welcome-overlay h2 {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+
+  .welcome-overlay p {
+    max-width: 400px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .welcome-steps {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: left;
+  }
+
+  .welcome-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+  }
+
+  .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ember);
+    flex-shrink: 0;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .app-layout {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
+    .sidebar {
+      max-height: 300px;
+    }
+  }
+
+  /* ── Leaflet overrides ── */
+  .leaflet-container {
+    background: var(--bg) !important;
+  }
+
+  .leaflet-control-zoom a {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+  }
+
+  .leaflet-bar {
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+  }
+
+  /* ── Spinner ── */
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .loading-text {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  /* Sensor breakdown table */
+  .sensor-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+
+  .sensor-table th {
+    text-align: left;
+    padding: 6px 8px;
+    color: var(--text-muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sensor-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  }
+
+  .sensor-table .sensor-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+  }
+
+  /* Presets */
+  .preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .preset-btn {
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s;
+  }
+
+  .preset-btn:hover {
+    border-color: var(--amber);
+    background: rgba(240, 136, 62, 0.06);
+  }
+
+  .preset-btn span {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 2C8 2 6 6 6 10c0 2 1 4 2 5.5C9 17 9 18 9 19h6c0-1 0-2 1-3.5C17 14 18 12 18 10c0-4-2-8-6-8z" fill="#f85149" opacity="0.8"/>
+      <path d="M12 2C10 4 9 7 9 10c0 2 .5 3.5 1.5 5C11.5 16.5 12 17.5 12 19c0-1.5.5-2.5 1.5-4 1-1.5 1.5-3 1.5-5 0-3-1-6-3-8z" fill="#ff6a33"/>
+      <path d="M10 19h4v2a1 1 0 01-1 1h-2a1 1 0 01-1-1v-2z" fill="#d29922"/>
+    </svg>
+    <h1>Fire<span>Pulse</span></h1>
+  </div>
+  <div class="topbar-meta">
+    <span><span class="status-dot"></span>NASA FIRMS Connected</span>
+    <span>SpaceApps 2026</span>
+  </div>
+</div>
+
+<!-- App Layout -->
+<div class="app-layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <!-- API Key -->
+    <div class="panel">
+      <div class="panel-title">FIRMS API Key</div>
+      <input type="password" class="api-key-input" id="apiKey" placeholder="Paste your MAP_KEY here" />
+      <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">
+        Get one free at <a href="https://firms.modaps.eosdis.nasa.gov/api/map_key/" target="_blank" style="color:var(--cool);">firms.modaps.eosdis.nasa.gov</a>
+      </div>
+    </div>
+
+    <!-- Sensors -->
+    <div class="panel">
+      <div class="panel-title">Satellite Sensors</div>
+      <div class="sensor-grid">
+        <label class="sensor-toggle active" data-sensor="MODIS_NRT">
+          <input type="checkbox" checked />
+          <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <span class="sensor-name">MODIS</span>
+          <span class="sensor-badge">Terra & Aqua</span>
+        </label>
+        <label class="sensor-toggle active" data-sensor="VIIRS_NOAA20_NRT">
+          <input type="checkbox" checked />
+          <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <span class="sensor-name">VIIRS NOAA-20</span>
+          <span class="sensor-badge">375m</span>
+        </label>
+        <label class="sensor-toggle" data-sensor="VIIRS_NOAA21_NRT">
+          <input type="checkbox" />
+          <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <span class="sensor-name">VIIRS NOAA-21</span>
+          <span class="sensor-badge">new</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Area & Dates -->
+    <div class="panel">
+      <div class="panel-title">Area of Interest</div>
+      <div id="areaDisplay" class="area-info" style="margin-bottom:10px;">
+        <span>Draw a rectangle on the map</span>
+      </div>
+      <div class="preset-list" style="margin-bottom:12px;">
+        <button class="preset-btn" onclick="setPreset(-125,24,-66,49)">
+          Continental US <span>contiguous 48 states</span>
+        </button>
+        <button class="preset-btn" onclick="setPreset(-10,35,40,60)">
+          Europe <span>W. Europe & Mediterranean</span>
+        </button>
+        <button class="preset-btn" onclick="setPreset(95,-44,155,-10)">
+          Australia <span>continent wide</span>
+        </button>
+        <button class="preset-btn" onclick="setPreset(-73,-18,-34,5)">
+          Amazon Basin <span>South America</span>
+        </button>
+        <button class="preset-btn" onclick="setPreset(60,5,100,40)">
+          South Asia <span>India & surroundings</span>
+        </button>
+      </div>
+
+      <div class="panel-title" style="margin-top:4px;">Date Range</div>
+      <div class="date-row">
+        <div class="date-field">
+          <label>Start</label>
+          <input type="date" id="startDate" />
+        </div>
+        <div class="date-field">
+          <label>End</label>
+          <input type="date" id="endDate" />
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">
+        API allows up to 10 days per batch. Longer ranges are fetched in batches automatically.
+      </div>
+    </div>
+
+    <!-- Fetch button -->
+    <button class="btn btn-primary" id="fetchBtn" onclick="fetchData()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L12 16M12 16L7 11M12 16L17 11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Fetch fire data
+    </button>
+
+    <div class="progress-bar" id="progressBar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel" id="statsPanel" style="display:none;">
+      <div class="panel-title">Summary</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value ember" id="statTotal">0</div>
+          <div class="stat-label">Total hotspots</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value amber" id="statDays">0</div>
+          <div class="stat-label">Active days</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value cool" id="statPeak">—</div>
+          <div class="stat-label">Peak day</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value green" id="statSensors">0</div>
+          <div class="stat-label">Sensors used</div>
+        </div>
+      </div>
+
+      <!-- Sensor breakdown -->
+      <table class="sensor-table" id="sensorBreakdown" style="display:none;">
+        <thead>
+          <tr><th>Sensor</th><th>Hotspots</th><th>Share</th></tr>
+        </thead>
+        <tbody id="sensorBreakdownBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- Map -->
+    <div class="map-container">
+      <div id="map"></div>
+      <div class="map-overlay">
+        <div class="map-chip" id="hotspotCount" style="display:none;">
+          <strong id="mapCount">0</strong> hotspots displayed
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="dashboard" id="dashboard">
+      <div id="welcomeState" class="welcome-overlay">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C8 2 6 6 6 10c0 2 1 4 2 5.5C9 17 9 18 9 19h6c0-1 0-2 1-3.5C17 14 18 12 18 10c0-4-2-8-6-8z" fill="#f85149" opacity="0.4"/>
+          <path d="M10 19h4v2a1 1 0 01-1 1h-2a1 1 0 01-1-1v-2z" fill="#d29922" opacity="0.4"/>
+        </svg>
+        <h2>Select an area to begin</h2>
+        <p>Draw a bounding box on the map or use a preset region, configure your sensors, and fetch fire data to see the burning activity calendar.</p>
+        <div class="welcome-steps">
+          <div class="welcome-step"><div class="step-num">1</div> Enter your NASA FIRMS API key</div>
+          <div class="welcome-step"><div class="step-num">2</div> Draw an area on the map or pick a preset</div>
+          <div class="welcome-step"><div class="step-num">3</div> Set the date range and fetch data</div>
+        </div>
+      </div>
+
+      <div id="dashContent" style="display:none;">
+        <div class="dashboard-tabs">
+          <button class="dash-tab active" onclick="switchTab('calendar', this)">Calendar</button>
+          <button class="dash-tab" onclick="switchTab('timeline', this)">Timeline</button>
+          <button class="dash-tab" onclick="switchTab('sensors', this)">By Sensor</button>
+          <button class="dash-tab" onclick="switchTab('anomalies', this)">Anomalies</button>
+        </div>
+
+        <!-- Calendar Heatmap -->
+        <div class="chart-panel active" id="panel-calendar">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Burning Activity Calendar</div>
+              <div class="chart-subtitle">Daily fire hotspot counts — darker cells indicate more burning</div>
+            </div>
+          </div>
+          <div class="calendar-heatmap" id="calendarHeatmap"></div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="chart-panel" id="panel-timeline">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Fire Activity Timeline</div>
+              <div class="chart-subtitle">Daily hotspot detections across all selected sensors</div>
+            </div>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="timelineChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Sensors breakdown -->
+        <div class="chart-panel" id="panel-sensors">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Sensor Comparison</div>
+              <div class="chart-subtitle">Contribution of each satellite sensor to total detections</div>
+            </div>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="sensorChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Anomalies -->
+        <div class="chart-panel" id="panel-anomalies">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Anomalous Burning Days</div>
+              <div class="chart-subtitle">Days where fire activity exceeded 2 standard deviations above the mean</div>
+            </div>
+          </div>
+          <div class="anomaly-list" id="anomalyList">
+            <div style="color:var(--text-muted);text-align:center;padding:40px;">No anomalies detected</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Heatmap Tooltip -->
+<div class="heatmap-tooltip" id="heatmapTooltip"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let selectedBounds = null; // {west, south, east, north}
+let allFireData = [];
+let heatLayer = null;
+let markerLayer = null;
+let drawnItems = null;
+let timelineChart = null;
+let sensorChart = null;
+
+const SENSOR_COLORS = {
+  'MODIS': '#388bfd',
+  'VIIRS S-NPP': '#f85149',
+  'VIIRS NOAA-20': '#f0883e',
+  'VIIRS NOAA-21': '#d29922',
+};
+
+const SENSOR_MAP = {
+  'MODIS_NRT': 'MODIS',
+  'VIIRS_SNPP_NRT': 'VIIRS S-NPP',
+  'VIIRS_NOAA20_NRT': 'VIIRS NOAA-20',
+  'VIIRS_NOAA21_NRT': 'VIIRS NOAA-21',
+};
+
+// ═══════════════════════════════════════════
+// INIT MAP
+// ═══════════════════════════════════════════
+const map = L.map('map', {
+  center: [20, 0],
+  zoom: 2,
+  zoomControl: true,
+  attributionControl: false,
+});
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: '&copy; Esri',
+}).addTo(map);
+
+L.control.attribution({ prefix: false, position: 'bottomright' })
+  .addAttribution('<a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a>')
+  .addTo(map);
+
+// Draw control
+drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+const drawControl = new L.Control.Draw({
+  draw: {
+    rectangle: {
+      shapeOptions: {
+        color: '#f85149',
+        weight: 2,
+        fillOpacity: 0.1,
+      }
+    },
+    polygon: false,
+    polyline: false,
+    circle: false,
+    marker: false,
+    circlemarker: false,
+  },
+  edit: {
+    featureGroup: drawnItems,
+    remove: true,
+  }
+});
+map.addControl(drawControl);
+
+map.on(L.Draw.Event.CREATED, function(e) {
+  drawnItems.clearLayers();
+  drawnItems.addLayer(e.layer);
+  const bounds = e.layer.getBounds();
+  const clampLng = v => Math.max(-180, Math.min(180, v));
+  const clampLat = v => Math.max(-90, Math.min(90, v));
+  selectedBounds = {
+    west: clampLng(bounds.getWest()).toFixed(3),
+    south: clampLat(bounds.getSouth()).toFixed(3),
+    east: clampLng(bounds.getEast()).toFixed(3),
+    north: clampLat(bounds.getNorth()).toFixed(3),
+  };
+  updateAreaDisplay();
+});
+
+map.on(L.Draw.Event.DELETED, function() {
+  selectedBounds = null;
+  updateAreaDisplay();
+});
+
+// ═══════════════════════════════════════════
+// SENSOR TOGGLES
+// ═══════════════════════════════════════════
+document.querySelectorAll('.sensor-toggle').forEach(toggle => {
+  toggle.addEventListener('click', function(e) {
+    e.preventDefault(); // prevent label from also toggling the checkbox
+    this.classList.toggle('active');
+    const cb = this.querySelector('input');
+    cb.checked = !cb.checked;
+  });
+});
+
+// ═══════════════════════════════════════════
+// DATE DEFAULTS
+// ═══════════════════════════════════════════
+const today = new Date();
+const weekAgo = new Date(today);
+weekAgo.setUTCDate(weekAgo.getUTCDate() - 9);
+document.getElementById('endDate').value = today.toISOString().split('T')[0];
+document.getElementById('startDate').value = weekAgo.toISOString().split('T')[0];
+
+// ═══════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════
+function setPreset(w, s, e, n) {
+  selectedBounds = {
+    west: w.toString(),
+    south: s.toString(),
+    east: e.toString(),
+    north: n.toString(),
+  };
+
+  drawnItems.clearLayers();
+  const rect = L.rectangle([[s, w], [n, e]], {
+    color: '#f85149',
+    weight: 2,
+    fillOpacity: 0.1,
+  });
+  drawnItems.addLayer(rect);
+  map.fitBounds(rect.getBounds(), { padding: [30, 30] });
+  updateAreaDisplay();
+}
+
+function updateAreaDisplay() {
+  const el = document.getElementById('areaDisplay');
+  if (!selectedBounds) {
+    el.innerHTML = '<span>Draw a rectangle on the map</span>';
+    return;
+  }
+  el.innerHTML = `
+    <span>Bounding box selected</span>
+    <span class="area-coords">${selectedBounds.west}, ${selectedBounds.south} → ${selectedBounds.east}, ${selectedBounds.north}</span>
+  `;
+}
+
+// ═══════════════════════════════════════════
+// FETCH FIRE DATA
+// ═══════════════════════════════════════════
+async function fetchData() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) {
+    alert('Please enter your NASA FIRMS API key.');
+    return;
+  }
+  if (!selectedBounds) {
+    alert('Please draw or select an area of interest.');
+    return;
+  }
+
+  const activeSensors = [];
+  document.querySelectorAll('.sensor-toggle.active').forEach(t => {
+    activeSensors.push(t.dataset.sensor);
+  });
+  if (activeSensors.length === 0) {
+    alert('Please select at least one sensor.');
+    return;
+  }
+
+  const startDate = new Date(document.getElementById('startDate').value);
+  const endDate = new Date(document.getElementById('endDate').value);
+  if (isNaN(startDate) || isNaN(endDate)) {
+    alert('Please set valid start and end dates.');
+    return;
+  }
+  if (endDate < startDate) {
+    alert('End date must be after start date.');
+    return;
+  }
+
+  const fetchBtn = document.getElementById('fetchBtn');
+  fetchBtn.disabled = true;
+  fetchBtn.innerHTML = '<div class="spinner"></div><span class="loading-text">Fetching data...</span>';
+
+  const progressBar = document.getElementById('progressBar');
+  const progressFill = document.getElementById('progressFill');
+  progressBar.classList.add('active');
+
+  allFireData = [];
+  const coords = `${selectedBounds.west},${selectedBounds.south},${selectedBounds.east},${selectedBounds.north}`;
+
+  // Build date batches (max 10 days each)
+  const batches = [];
+  let current = new Date(startDate);
+  while (current <= endDate) {
+    const batchEnd = new Date(current);
+    batchEnd.setUTCDate(batchEnd.getUTCDate() + 9);
+    if (batchEnd > endDate) batchEnd.setTime(endDate.getTime());
+
+    const days = Math.round((batchEnd - current) / (1000 * 60 * 60 * 24)) + 1;
+    batches.push({
+      date: current.toISOString().split('T')[0],
+      days: Math.min(days, 10),
+    });
+
+    current = new Date(batchEnd);
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+
+  const totalRequests = batches.length * activeSensors.length;
+  let completedRequests = 0;
+  let errors = [];
+
+  for (const batch of batches) {
+    for (const sensor of activeSensors) {
+      try {
+        const url = `/firms-api/area/json/${sensor}/${coords}/${batch.days}/${batch.date}`;
+        const response = await fetch(url, {
+          headers: { 'X-FIRMS-MAP-KEY': apiKey },
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          // Detect Earthdata login redirect (bad API key)
+          if (text.includes('earthdata.nasa.gov') || text.includes('<!DOCTYPE html')) {
+            errors.push(`${sensor} ${batch.date}: ${response.status} — Invalid API key (got Earthdata login page)`);
+          } else {
+            errors.push(`${sensor} ${batch.date}: ${response.status} — ${text.slice(0, 100)}`);
+          }
+        } else {
+          const text = await response.text();
+          // Sometimes FIRMS returns 200 but with HTML (redirect page)
+          if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+            errors.push(`${sensor} ${batch.date}: Got HTML instead of JSON — check your API key`);
+          } else {
+            try {
+              const data = JSON.parse(text);
+              if (Array.isArray(data)) {
+                data.forEach(d => {
+                  d._sensor = SENSOR_MAP[sensor] || sensor;
+                  d._source = sensor;
+                });
+                allFireData = allFireData.concat(data);
+              }
+            } catch (parseErr) {
+              errors.push(`${sensor} ${batch.date}: Invalid JSON response`);
+            }
+          }
+        }
+      } catch (err) {
+        errors.push(`${sensor} ${batch.date}: ${err.message}`);
+      }
+
+      completedRequests++;
+      progressFill.style.width = `${(completedRequests / totalRequests) * 100}%`;
+      fetchBtn.querySelector('.loading-text').textContent =
+        `Fetching ${completedRequests}/${totalRequests}...`;
+    }
+  }
+
+  progressBar.classList.remove('active');
+  progressFill.style.width = '0%';
+  fetchBtn.disabled = false;
+  fetchBtn.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L12 16M12 16L7 11M12 16L17 11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    Fetch fire data
+  `;
+
+  if (errors.length > 0 && allFireData.length === 0) {
+    const isKeyIssue = errors.some(e => e.includes('Invalid API key') || e.includes('check your API key') || e.includes('earthdata'));
+    if (isKeyIssue) {
+      alert('API key error — your FIRMS MAP_KEY appears to be invalid or expired.\n\nGet a free key at:\nhttps://firms.modaps.eosdis.nasa.gov/api/map_key/\n\nMake sure you copy the MAP_KEY (not your Earthdata password).');
+    } else {
+      alert('All requests failed:\n\n' + errors.join('\n'));
+    }
+    return;
+  }
+
+  if (allFireData.length === 0) {
+    alert('No fire data found for the selected area and date range.');
+    return;
+  }
+
+  if (errors.length > 0) {
+    alert(`${errors.length} of ${totalRequests} requests failed, so the results may be incomplete.\n\n` + errors.slice(0, 5).join('\n'));
+  }
+
+  // Process and render
+  processData();
+}
+
+// ═══════════════════════════════════════════
+// PROCESS & RENDER
+// ═══════════════════════════════════════════
+function processData() {
+  document.getElementById('welcomeState').style.display = 'none';
+  document.getElementById('dashContent').style.display = '';
+  document.getElementById('statsPanel').style.display = '';
+  document.getElementById('hotspotCount').style.display = '';
+
+  // Group by date
+  const byDate = {};
+  const bySensor = {};
+  let maxFRP = 0;
+
+  allFireData.forEach(d => {
+    const date = d.acq_date;
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push(d);
+
+    const sensor = d._sensor || 'Unknown';
+    if (!bySensor[sensor]) bySensor[sensor] = 0;
+    bySensor[sensor]++;
+
+    if (d.frp && d.frp > maxFRP) maxFRP = d.frp;
+  });
+
+  // Stats
+  const dates = Object.keys(byDate).sort();
+  const peakDate = dates.reduce((a, b) => byDate[a].length > byDate[b].length ? a : b);
+
+  document.getElementById('statTotal').textContent = allFireData.length.toLocaleString();
+  document.getElementById('statDays').textContent = dates.length;
+  document.getElementById('statPeak').textContent = formatShortDate(peakDate);
+  document.getElementById('statSensors').textContent = Object.keys(bySensor).length;
+  document.getElementById('mapCount').textContent = allFireData.length.toLocaleString();
+
+  // Sensor breakdown table
+  const breakdownEl = document.getElementById('sensorBreakdown');
+  const bodyEl = document.getElementById('sensorBreakdownBody');
+  bodyEl.innerHTML = '';
+  breakdownEl.style.display = '';
+  const total = allFireData.length;
+  Object.entries(bySensor).sort((a, b) => b[1] - a[1]).forEach(([sensor, count]) => {
+    const pct = ((count / total) * 100).toFixed(1);
+    const color = SENSOR_COLORS[sensor] || '#8b949e';
+    bodyEl.innerHTML += `
+      <tr>
+        <td><span class="sensor-dot" style="background:${color}"></span>${sensor}</td>
+        <td style="font-family:var(--mono)">${count.toLocaleString()}</td>
+        <td style="font-family:var(--mono);color:var(--text-muted)">${pct}%</td>
+      </tr>
+    `;
+  });
+
+  // Render everything
+  renderMap();
+  renderCalendar(byDate);
+  renderTimeline(byDate, dates);
+  renderSensorChart(bySensor);
+  detectAnomalies(byDate, dates);
+}
+
+// ═══════════════════════════════════════════
+// MAP RENDERING
+// ═══════════════════════════════════════════
+function renderMap() {
+  if (heatLayer) map.removeLayer(heatLayer);
+  if (markerLayer) map.removeLayer(markerLayer);
+
+  // Use heatmap for large datasets, markers for small
+  if (allFireData.length > 500) {
+    const heatPoints = allFireData.map(d => {
+      const intensity = d.frp ? Math.min(d.frp / 100, 1) : 0.3;
+      return [d.latitude, d.longitude, intensity];
+    });
+    heatLayer = L.heatLayer(heatPoints, {
+      radius: 15,
+      blur: 20,
+      maxZoom: 10,
+      gradient: {
+        0.0: '#1a1a2e',
+        0.2: '#5a1a1a',
+        0.4: '#8b2020',
+        0.6: '#c93030',
+        0.8: '#f85149',
+        1.0: '#ff6a33',
+      }
+    }).addTo(map);
+  } else {
+    markerLayer = L.layerGroup();
+    allFireData.forEach(d => {
+      const color = SENSOR_COLORS[d._sensor] || '#f85149';
+      const circle = L.circleMarker([d.latitude, d.longitude], {
+        radius: 4,
+        fillColor: color,
+        fillOpacity: 0.7,
+        color: color,
+        weight: 1,
+      });
+      circle.bindPopup(`
+        <b>${d._sensor}</b><br>
+        Date: ${d.acq_date} ${d.acq_time || ''}<br>
+        FRP: ${d.frp || '—'} MW<br>
+        Confidence: ${d.confidence || '—'}<br>
+        Lat: ${d.latitude}, Lon: ${d.longitude}
+      `);
+      markerLayer.addLayer(circle);
+    });
+    markerLayer.addTo(map);
+  }
+}
+
+// ═══════════════════════════════════════════
+// CALENDAR HEATMAP
+// ═══════════════════════════════════════════
+function renderCalendar(byDate) {
+  const container = document.getElementById('calendarHeatmap');
+  container.innerHTML = '';
+
+  const dates = Object.keys(byDate).sort();
+  if (dates.length === 0) return;
+
+  const startDate = new Date(dates[0]);
+  const endDate = new Date(dates[dates.length - 1]);
+
+  // Get counts and calculate levels
+  const dayCounts = {};
+  let maxCount = 0;
+  dates.forEach(d => {
+    dayCounts[d] = byDate[d].length;
+    if (dayCounts[d] > maxCount) maxCount = dayCounts[d];
+  });
+
+  // Anomaly threshold
+  const counts = Object.values(dayCounts);
+  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+  const std = Math.sqrt(counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length);
+  const anomalyThreshold = mean + 2 * std;
+
+  // Build month labels
+  const monthsRow = document.createElement('div');
+  monthsRow.className = 'heatmap-months';
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Build grid
+  const gridContainer = document.createElement('div');
+  gridContainer.style.display = 'flex';
+
+  // Day labels
+  const dayLabels = document.createElement('div');
+  dayLabels.className = 'heatmap-labels';
+  ['Mon','','Wed','','Fri','','Sun'].forEach(label => {
+    const el = document.createElement('div');
+    el.className = 'heatmap-day-label';
+    el.textContent = label;
+    dayLabels.appendChild(el);
+  });
+  gridContainer.appendChild(dayLabels);
+
+  const heatmapGrid = document.createElement('div');
+  heatmapGrid.className = 'heatmap-grid';
+
+  // Fill from start to end, week by week
+  let currentDate = new Date(startDate);
+  // Align to Monday
+  while (currentDate.getUTCDay() !== 1) {
+    currentDate.setUTCDate(currentDate.getUTCDate() - 1);
+  }
+
+  let lastMonth = -1;
+  let weekCount = 0;
+
+  while (currentDate <= endDate || currentDate.getUTCDay() !== 1) {
+    const week = document.createElement('div');
+    week.className = 'heatmap-week';
+
+    // Month label
+    if (currentDate.getUTCMonth() !== lastMonth) {
+      const monthLabel = document.createElement('div');
+      monthLabel.className = 'heatmap-month-label';
+      monthLabel.textContent = monthNames[currentDate.getUTCMonth()];
+      monthLabel.style.position = 'absolute';
+      monthLabel.style.top = '-16px';
+      monthLabel.style.left = `${weekCount * 17 + 30}px`;
+      monthLabel.style.whiteSpace = 'nowrap';
+      monthsRow.appendChild(monthLabel);
+      lastMonth = currentDate.getUTCMonth();
+    }
+
+    for (let day = 0; day < 7; day++) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const cell = document.createElement('div');
+      cell.className = 'heatmap-cell';
+
+      if (currentDate >= startDate && currentDate <= endDate) {
+        const count = dayCounts[dateStr] || 0;
+        let level = 0;
+        if (count > 0) {
+          level = Math.min(5, Math.ceil((count / maxCount) * 5));
+        }
+        cell.setAttribute('data-level', level);
+        cell.setAttribute('data-date', dateStr);
+        cell.setAttribute('data-count', count);
+
+        if (count > anomalyThreshold && count > 0) {
+          cell.classList.add('anomaly');
+        }
+
+        // Tooltip events
+        cell.addEventListener('mouseenter', showTooltip);
+        cell.addEventListener('mouseleave', hideTooltip);
+      } else {
+        cell.style.opacity = '0.15';
+      }
+
+      week.appendChild(cell);
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+
+    heatmapGrid.appendChild(week);
+    weekCount++;
+
+    if (currentDate > endDate && currentDate.getUTCDay() === 1) break;
+  }
+
+  gridContainer.appendChild(heatmapGrid);
+
+  // Legend
+  const legend = document.createElement('div');
+  legend.className = 'heatmap-legend';
+  legend.innerHTML = `
+    <span>Less</span>
+    <div class="legend-cell" style="background:var(--surface-raised)"></div>
+    <div class="legend-cell" style="background:#2d1616"></div>
+    <div class="legend-cell" style="background:#5a1a1a"></div>
+    <div class="legend-cell" style="background:#8b2020"></div>
+    <div class="legend-cell" style="background:#c93030"></div>
+    <div class="legend-cell" style="background:#f85149"></div>
+    <span>More</span>
+    <span style="margin-left:12px;color:var(--ember);">● Anomaly</span>
+  `;
+
+  monthsRow.style.position = 'relative';
+  monthsRow.style.height = '18px';
+  container.appendChild(monthsRow);
+  container.appendChild(gridContainer);
+  container.appendChild(legend);
+}
+
+function showTooltip(e) {
+  const tip = document.getElementById('heatmapTooltip');
+  const date = e.target.getAttribute('data-date');
+  const count = e.target.getAttribute('data-count');
+  if (!date) return;
+
+  const d = new Date(date);
+  const formatted = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
+  tip.innerHTML = `${formatted}<br><strong>${parseInt(count).toLocaleString()} hotspots</strong>`;
+  tip.style.display = 'block';
+  tip.style.left = `${e.clientX + 12}px`;
+  tip.style.top = `${e.clientY - 40}px`;
+}
+
+function hideTooltip() {
+  document.getElementById('heatmapTooltip').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════
+// TIMELINE CHART
+// ═══════════════════════════════════════════
+function renderTimeline(byDate, dates) {
+  const ctx = document.getElementById('timelineChart').getContext('2d');
+
+  if (timelineChart) timelineChart.destroy();
+
+  const labels = dates;
+  const data = dates.map(d => byDate[d].length);
+
+  // Calculate moving average
+  const windowSize = Math.max(1, Math.floor(dates.length / 10));
+  const movingAvg = data.map((_, i) => {
+    const start = Math.max(0, i - Math.floor(windowSize / 2));
+    const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+    const slice = data.slice(start, end);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  });
+
+  timelineChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Daily hotspots',
+          data,
+          backgroundColor: data.map(v => {
+            const ratio = v / Math.max(...data);
+            if (ratio > 0.8) return '#f85149';
+            if (ratio > 0.5) return '#f0883e';
+            if (ratio > 0.2) return '#d29922';
+            return '#30363d';
+          }),
+          borderRadius: 2,
+          order: 2,
+        },
+        {
+          label: 'Trend',
+          data: movingAvg,
+          type: 'line',
+          borderColor: '#388bfd',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.4,
+          fill: false,
+          order: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12 },
+        },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#e6edf3',
+          titleFont: { family: 'DM Sans' },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#484f58', font: { size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(48,54,61,0.3)' },
+        },
+        y: {
+          ticks: { color: '#484f58', font: { size: 10 } },
+          grid: { color: 'rgba(48,54,61,0.3)' },
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+// SENSOR CHART
+// ═══════════════════════════════════════════
+function renderSensorChart(bySensor) {
+  const ctx = document.getElementById('sensorChart').getContext('2d');
+  if (sensorChart) sensorChart.destroy();
+
+  const sensors = Object.keys(bySensor);
+  const counts = Object.values(bySensor);
+  const colors = sensors.map(s => SENSOR_COLORS[s] || '#8b949e');
+
+  sensorChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: sensors,
+      datasets: [{
+        data: counts,
+        backgroundColor: colors,
+        borderColor: '#161b22',
+        borderWidth: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#e6edf3',
+            padding: 16,
+            font: { size: 12, family: 'DM Sans' },
+            usePointStyle: true,
+            pointStyleWidth: 12,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#e6edf3',
+          callbacks: {
+            label: function(ctx) {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = ((ctx.parsed / total) * 100).toFixed(1);
+              return ` ${ctx.label}: ${ctx.parsed.toLocaleString()} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+// ANOMALY DETECTION
+// ═══════════════════════════════════════════
+function detectAnomalies(byDate, dates) {
+  const list = document.getElementById('anomalyList');
+  list.innerHTML = '';
+
+  const counts = dates.map(d => byDate[d].length);
+  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+  const std = Math.sqrt(counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length);
+
+  if (std === 0) {
+    list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:40px;">All days have similar activity — no anomalies</div>';
+    return;
+  }
+
+  const anomalies = [];
+  dates.forEach((date, i) => {
+    const count = counts[i];
+    const zScore = (count - mean) / std;
+    if (zScore > 2) {
+      anomalies.push({ date, count, zScore, factor: (count / mean).toFixed(1) });
+    }
+  });
+
+  if (anomalies.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:40px;">No anomalous burning days detected in this period</div>';
+    return;
+  }
+
+  anomalies.sort((a, b) => b.zScore - a.zScore);
+
+  anomalies.forEach(a => {
+    const d = new Date(a.date);
+    const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const item = document.createElement('div');
+    item.className = 'anomaly-item';
+    item.innerHTML = `
+      <div class="anomaly-date">${formatted}</div>
+      <div class="anomaly-desc">${a.count.toLocaleString()} hotspots detected — ${a.factor}x the daily average</div>
+      <div class="anomaly-factor">z=${a.zScore.toFixed(1)}</div>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ═══════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════
+function switchTab(tab, btn) {
+  document.querySelectorAll('.dash-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.chart-panel').forEach(p => p.classList.remove('active'));
+
+  btn.classList.add('active');
+  document.getElementById(`panel-${tab}`).classList.add('active');
+
+  // Resize charts when switching tabs
+  if (tab === 'timeline' && timelineChart) timelineChart.resize();
+  if (tab === 'sensors' && sensorChart) sensorChart.resize();
+}
+
+// ═══════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════
+function formatShortDate(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+</script>
+</body>
+</html>

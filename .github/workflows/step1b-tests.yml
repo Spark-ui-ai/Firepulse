@@ -1,0 +1,33 @@
+name: FirePulse Step 1B tests
+
+on:
+  push:
+    branches:
+      - step1a-independent-review
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Compile Python files
+        run: python -m py_compile server_3.py test_server.py
+      - name: Run Python regression tests
+        run: python -m unittest -v test_server
+      - name: Run frontend date tests
+        run: node fe_dates_test.js

@@ -1,0 +1,190 @@
+--- a/firepulse.html
++++ b/firepulse.html
+@@ -860,12 +860,6 @@
+           <span class="sensor-name">MODIS</span>
+           <span class="sensor-badge">Terra & Aqua</span>
+         </label>
+-        <label class="sensor-toggle active" data-sensor="VIIRS_SNPP_NRT">
+-          <input type="checkbox" checked />
+-          <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+-          <span class="sensor-name">VIIRS S-NPP</span>
+-          <span class="sensor-badge">375m</span>
+-        </label>
+         <label class="sensor-toggle active" data-sensor="VIIRS_NOAA20_NRT">
+           <input type="checkbox" checked />
+           <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+@@ -894,7 +888,7 @@
+         <button class="preset-btn" onclick="setPreset(-10,35,40,60)">
+           Europe <span>W. Europe & Mediterranean</span>
+         </button>
+-        <button class="preset-btn" onclick="setPreset(95,-10,155,-44)">
++        <button class="preset-btn" onclick="setPreset(95,-44,155,-10)">
+           Australia <span>continent wide</span>
+         </button>
+         <button class="preset-btn" onclick="setPreset(-73,-18,-34,5)">
+@@ -993,10 +987,10 @@
+ 
+       <div id="dashContent" style="display:none;">
+         <div class="dashboard-tabs">
+-          <button class="dash-tab active" onclick="switchTab('calendar')">Calendar</button>
+-          <button class="dash-tab" onclick="switchTab('timeline')">Timeline</button>
+-          <button class="dash-tab" onclick="switchTab('sensors')">By Sensor</button>
+-          <button class="dash-tab" onclick="switchTab('anomalies')">Anomalies</button>
++          <button class="dash-tab active" onclick="switchTab('calendar', this)">Calendar</button>
++          <button class="dash-tab" onclick="switchTab('timeline', this)">Timeline</button>
++          <button class="dash-tab" onclick="switchTab('sensors', this)">By Sensor</button>
++          <button class="dash-tab" onclick="switchTab('anomalies', this)">Anomalies</button>
+         </div>
+ 
+         <!-- Calendar Heatmap -->
+@@ -1131,11 +1125,13 @@
+   drawnItems.clearLayers();
+   drawnItems.addLayer(e.layer);
+   const bounds = e.layer.getBounds();
++  const clampLng = v => Math.max(-180, Math.min(180, v));
++  const clampLat = v => Math.max(-90, Math.min(90, v));
+   selectedBounds = {
+-    west: bounds.getWest().toFixed(3),
+-    south: bounds.getSouth().toFixed(3),
+-    east: bounds.getEast().toFixed(3),
+-    north: bounds.getNorth().toFixed(3),
++    west: clampLng(bounds.getWest()).toFixed(3),
++    south: clampLat(bounds.getSouth()).toFixed(3),
++    east: clampLng(bounds.getEast()).toFixed(3),
++    north: clampLat(bounds.getNorth()).toFixed(3),
+   };
+   updateAreaDisplay();
+ });
+@@ -1162,7 +1158,7 @@
+ // ═══════════════════════════════════════════
+ const today = new Date();
+ const weekAgo = new Date(today);
+-weekAgo.setDate(weekAgo.getDate() - 9);
++weekAgo.setUTCDate(weekAgo.getUTCDate() - 9);
+ document.getElementById('endDate').value = today.toISOString().split('T')[0];
+ document.getElementById('startDate').value = weekAgo.toISOString().split('T')[0];
+ 
+@@ -1250,17 +1246,17 @@
+   let current = new Date(startDate);
+   while (current <= endDate) {
+     const batchEnd = new Date(current);
+-    batchEnd.setDate(batchEnd.getDate() + 9);
++    batchEnd.setUTCDate(batchEnd.getUTCDate() + 9);
+     if (batchEnd > endDate) batchEnd.setTime(endDate.getTime());
+ 
+-    const days = Math.ceil((batchEnd - current) / (1000 * 60 * 60 * 24)) + 1;
++    const days = Math.round((batchEnd - current) / (1000 * 60 * 60 * 24)) + 1;
+     batches.push({
+       date: current.toISOString().split('T')[0],
+       days: Math.min(days, 10),
+     });
+ 
+     current = new Date(batchEnd);
+-    current.setDate(current.getDate() + 1);
++    current.setUTCDate(current.getUTCDate() + 1);
+   }
+ 
+   const totalRequests = batches.length * activeSensors.length;
+@@ -1335,6 +1331,10 @@
+     return;
+   }
+ 
++  if (errors.length > 0) {
++    alert(`${errors.length} of ${totalRequests} requests failed, so the results may be incomplete.\n\n` + errors.slice(0, 5).join('\n'));
++  }
++
+   // Process and render
+   processData();
+ }
+@@ -1504,28 +1504,28 @@
+   // Fill from start to end, week by week
+   let currentDate = new Date(startDate);
+   // Align to Monday
+-  while (currentDate.getDay() !== 1) {
+-    currentDate.setDate(currentDate.getDate() - 1);
++  while (currentDate.getUTCDay() !== 1) {
++    currentDate.setUTCDate(currentDate.getUTCDate() - 1);
+   }
+ 
+   let lastMonth = -1;
+   let weekCount = 0;
+ 
+-  while (currentDate <= endDate || currentDate.getDay() !== 1) {
++  while (currentDate <= endDate || currentDate.getUTCDay() !== 1) {
+     const week = document.createElement('div');
+     week.className = 'heatmap-week';
+ 
+     // Month label
+-    if (currentDate.getMonth() !== lastMonth) {
++    if (currentDate.getUTCMonth() !== lastMonth) {
+       const monthLabel = document.createElement('div');
+       monthLabel.className = 'heatmap-month-label';
+-      monthLabel.textContent = monthNames[currentDate.getMonth()];
++      monthLabel.textContent = monthNames[currentDate.getUTCMonth()];
+       monthLabel.style.position = 'absolute';
+       monthLabel.style.top = '-16px';
+       monthLabel.style.left = `${weekCount * 17 + 30}px`;
+       monthLabel.style.whiteSpace = 'nowrap';
+       monthsRow.appendChild(monthLabel);
+-      lastMonth = currentDate.getMonth();
++      lastMonth = currentDate.getUTCMonth();
+     }
+ 
+     for (let day = 0; day < 7; day++) {
+@@ -1555,13 +1555,13 @@
+       }
+ 
+       week.appendChild(cell);
+-      currentDate.setDate(currentDate.getDate() + 1);
++      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+     }
+ 
+     heatmapGrid.appendChild(week);
+     weekCount++;
+ 
+-    if (currentDate > endDate && currentDate.getDay() === 1) break;
++    if (currentDate > endDate && currentDate.getUTCDay() === 1) break;
+   }
+ 
+   gridContainer.appendChild(heatmapGrid);
+@@ -1595,7 +1595,7 @@
+   if (!date) return;
+ 
+   const d = new Date(date);
+-  const formatted = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
++  const formatted = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+ 
+   tip.innerHTML = `${formatted}<br><strong>${parseInt(count).toLocaleString()} hotspots</strong>`;
+   tip.style.display = 'block';
+@@ -1783,7 +1783,7 @@
+ 
+   anomalies.forEach(a => {
+     const d = new Date(a.date);
+-    const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
++    const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+     const item = document.createElement('div');
+     item.className = 'anomaly-item';
+     item.innerHTML = `
+@@ -1798,11 +1798,11 @@
+ // ═══════════════════════════════════════════
+ // TAB SWITCHING
+ // ═══════════════════════════════════════════
+-function switchTab(tab) {
++function switchTab(tab, btn) {
+   document.querySelectorAll('.dash-tab').forEach(t => t.classList.remove('active'));
+   document.querySelectorAll('.chart-panel').forEach(p => p.classList.remove('active'));
+ 
+-  event.target.classList.add('active');
++  btn.classList.add('active');
+   document.getElementById(`panel-${tab}`).classList.add('active');
+ 
+   // Resize charts when switching tabs
+@@ -1816,7 +1816,7 @@
+ function formatShortDate(dateStr) {
+   if (!dateStr) return '—';
+   const d = new Date(dateStr);
+-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
++  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+ }
+ </script>
+ </body>
