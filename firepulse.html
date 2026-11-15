@@ -1393,11 +1393,14 @@ async function fetchData() {
     } else {
       showNotice('All FIRMS requests failed.\n' + errors.slice(0, 6).join('\n'), 'error');
     }
+    renderMap();
+    document.getElementById('hotspotCount').style.display = 'none';
     return;
   }
 
   if (allFireData.length === 0) {
     showNotice('No active-fire detections were returned for this area and date range. Try a wider date range or a nearby region.', 'warning');
+    renderMap();
     document.getElementById('hotspotCount').style.display = 'none';
     return;
   }
