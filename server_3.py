@@ -37,6 +37,7 @@ FIRMS_BASE = 'https://firms.modaps.eosdis.nasa.gov/api'
 MAX_DAY_RANGE = 5          # FIRMS Area API: max days per upstream call
 MAX_REQUEST_DAYS = 10      # max days per browser request (frontend batches by 10)
 MAX_WORKERS = 4            # GLOBAL cap on simultaneous upstream calls
+MAX_HTTP_THREADS = 16      # cap on concurrent HTTP handler threads
 MAX_INFLIGHT = 2           # proxy requests allowed to do work at once (memory guard)
 ADMISSION_WAIT = 20        # seconds a request waits for a slot before getting 503
 UPSTREAM_TIMEOUT = 30      # seconds, whole download of one chunk
@@ -51,7 +52,8 @@ def _env_int(name, default):
 
 
 # Parsed rows cost roughly 1.2 KB of RAM each (measured locally), so keep this modest.
-MAX_UPSTREAM_BYTES = _env_int('FIREPULSE_MAX_UPSTREAM_MB', 12) * 1024 * 1024
+MAX_UPSTREAM_MB = min(16, max(1, _env_int('FIREPULSE_MAX_UPSTREAM_MB', 8)))
+MAX_UPSTREAM_BYTES = MAX_UPSTREAM_MB * 1024 * 1024
 
 ALLOWED_FORMATS = {'json'}                 # the dashboard only ever asks for json
 ALLOWED_SOURCES = {'MODIS_NRT', 'VIIRS_NOAA20_NRT', 'VIIRS_NOAA21_NRT'}
@@ -201,14 +203,20 @@ def fetch_upstream(url):
         with urllib.request.urlopen(req, context=_SSL_CTX, timeout=UPSTREAM_TIMEOUT) as resp:
             buf = bytearray()
             while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise UpstreamError(504, 'NASA FIRMS took too long to respond')
+                # Tighten the socket timeout on every read; urllib's default is an
+                # inactivity timeout and can otherwise permit a slow trickle.
+                sock = getattr(getattr(getattr(resp, 'fp', None), 'raw', None), '_sock', None)
+                if sock is not None:
+                    sock.settimeout(remaining)
                 piece = resp.read(65536)
                 if not piece:
                     break
-                buf += piece
+                buf.extend(piece)
                 if len(buf) > MAX_UPSTREAM_BYTES:
                     raise UpstreamError(413, 'NASA FIRMS response too large; choose a smaller area or shorter date range')
-                if time.monotonic() > deadline:
-                    raise UpstreamError(504, 'NASA FIRMS took too long to respond')
             return bytes(buf).decode('utf-8', errors='replace')
     except UpstreamError:
         raise
@@ -288,7 +296,7 @@ class FirePulseHandler(http.server.BaseHTTPRequestHandler):
             return self._serve_dashboard(send_body)
         if path.startswith('/firms-api/'):
             if not send_body:
-                return self._send_text(405, 'Method not allowed', True)
+                return self._send_text(405, 'Method not allowed', send_body)
             return self.proxy_firms(path)
         return self._send_text(404, 'Not found', send_body)
 
@@ -362,6 +370,36 @@ class FirePulseHandler(http.server.BaseHTTPRequestHandler):
         _log('  [HTTP] ' + KEY_IN_PATH_RE.sub(r'\1<redacted>', format % args))
 
 
+class BoundedThreadingHTTPServer(http.server.ThreadingHTTPServer):
+    """Thread-per-request server with a hard cap on live handler threads."""
+    daemon_threads = True
+    block_on_close = False
+    request_queue_size = 32
+
+    def __init__(self, *args, **kwargs):
+        self._request_slots = threading.BoundedSemaphore(MAX_HTTP_THREADS)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._request_slots.acquire(blocking=False):
+            try:
+                request.sendall(b'HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: 5\r\nContent-Length: 0\r\n\r\n')
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
+
 def main():
     _log(f"""
 +-------------------------------------------+
@@ -370,7 +408,7 @@ def main():
 |  Press Ctrl+C to stop                     |
 +-------------------------------------------+
 """)
-    with http.server.ThreadingHTTPServer(('', PORT), FirePulseHandler) as httpd:
+    with BoundedThreadingHTTPServer(('', PORT), FirePulseHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
