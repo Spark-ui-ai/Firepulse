@@ -39,4 +39,4 @@ The browser sends the MAP_KEY in the `X-FIRMS-MAP-KEY` request header. The key i
 
 The frontend date-batching logic was exercised in the assistant's JavaScript runtime across five date ranges; all batches were contiguous, non-overlapping, and at most ten days, and the UTC source checks passed.
 
-The Python test suite targets `server_3.py` and includes header-authentication cases. Run the commands above locally before merging or deploying. Automated tests do not replace one real NASA FIRMS fetch with the user's own key.
+**CI verified:** GitHub Actions passed on commit `9da1c033abea8f6033d9ba5cee5ba6c4b3f575dd`: Python compilation, all 39 Python tests, and the frontend date tests. The suite mocks NASA FIRMS; it does not replace one real fetch with the user's own key.
