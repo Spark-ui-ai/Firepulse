@@ -1266,8 +1266,10 @@ async function fetchData() {
   for (const batch of batches) {
     for (const sensor of activeSensors) {
       try {
-        const url = `/firms-api/area/json/${apiKey}/${sensor}/${coords}/${batch.days}/${batch.date}`;
-        const response = await fetch(url);
+        const url = `/firms-api/area/json/${sensor}/${coords}/${batch.days}/${batch.date}`;
+        const response = await fetch(url, {
+          headers: { 'X-FIRMS-MAP-KEY': apiKey },
+        });
 
         if (!response.ok) {
           const text = await response.text();
