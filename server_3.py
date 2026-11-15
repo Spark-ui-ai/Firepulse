@@ -70,8 +70,12 @@ NUM_RE = re.compile(r'-?[0-9]{1,3}(?:\.[0-9]{1,6})?')
 DATE_RE = re.compile(r'[0-9]{4}-[0-9]{2}-[0-9]{2}')
 DAYS_RE = re.compile(r'[0-9]{1,4}')
 MIN_DATE = date(2000, 1, 1)
-# Matches the KEY segment of a FIRMS proxy path anywhere in a string.
-KEY_IN_PATH_RE = re.compile(r'(firms-api/area/[^/\s]*/)[^/\s]+')
+# Legacy key-in-path form was: /firms-api/area/<fmt>/<KEY>/...
+# Current form is:            /firms-api/area/<fmt>/<SOURCE>/...
+# Only redact a long alnum token in the old key position (defensive).
+KEY_IN_PATH_RE = re.compile(
+    r'(firms-api/area/(?:json|csv)/)([A-Za-z0-9]{20,})(?=/)'
+)
 
 
 def _log(msg):
@@ -353,7 +357,10 @@ class FirePulseHandler(http.server.BaseHTTPRequestHandler):
             _log(f'  [PROXY] {source} is discontinued - returning []')
             return self._send_json([], {'X-FirePulse-Warning': f'{source} discontinued'})
 
-        if not _ADMISSION.acquire(timeout=ADMISSION_WAIT):
+        # Capture the semaphore we acquire so a concurrent swap of the module
+        # global (tests, or future hot-reload) cannot release a different object.
+        slot = _ADMISSION
+        if not slot.acquire(timeout=ADMISSION_WAIT):
             return self._send_text(503, 'Server busy; retry in a few seconds', True, {'Retry-After': '5'})
         try:
             rows = fetch_area(key, source, area, days, start)
@@ -364,13 +371,13 @@ class FirePulseHandler(http.server.BaseHTTPRequestHandler):
             _log(f'  [PROXY] internal error {type(e).__name__}')
             return self._send_text(500, 'Internal server error')
         finally:
-            _ADMISSION.release()
+            slot.release()
 
         _log(f'  [PROXY] OK {len(rows)} hotspots ({source}, {days}d from {start})')
         self._send_json(rows)
 
     def log_message(self, format, *args):
-        # Request lines contain the MAP_KEY for proxy calls; redact it everywhere it can appear.
+        # MAP_KEY is header-only (Step 1B). Still redact residual legacy key-in-path probes.
         _log('  [HTTP] ' + KEY_IN_PATH_RE.sub(r'\1<redacted>', format % args))
 
 
