@@ -1528,10 +1528,11 @@ function renderMap() {
       });
 
     const zoom = map.getZoom();
-    const radius = zoom <= 4 ? 26 : zoom <= 7 ? 21 : 15;
+    const isContinentalZoom = zoom <= 4;
+    const radius = isContinentalZoom ? 16 : zoom <= 7 ? 21 : 15;
     heatLayer = L.heatLayer(heatPoints, {
       radius,
-      blur: Math.round(radius * 0.8),
+      blur: isContinentalZoom ? 12 : Math.round(radius * 0.8),
       minOpacity: 0.38,
       max: 1,
       maxZoom: 8,
@@ -1543,6 +1544,11 @@ function renderMap() {
         1.0: '#ffb347',
       }
     }).addTo(map);
+    // Leaflet.heat has no maxOpacity option; cap the rendered canvas opacity
+    // at continental zoom so coastlines and the basemap remain legible.
+    if (heatLayer._canvas) {
+      heatLayer._canvas.style.opacity = isContinentalZoom ? '0.75' : '1';
+    }
     return;
   }
 
