@@ -39,4 +39,4 @@ The browser sends the MAP_KEY in the `X-FIRMS-MAP-KEY` request header. The key i
 
 The frontend date-batching logic was exercised in the assistant's JavaScript runtime across five date ranges; all batches were contiguous, non-overlapping, and at most ten days, and the UTC source checks passed.
 
-**CI verified:** GitHub Actions passed on commit `64b276513e40ea483a02e483317568518f84c413`: Python compilation, all 40 Python tests, and the frontend date tests. The Render start-command correction was subsequently committed as `459978c88c249a6e8072cdc723bd68a07735fff0`; its CI run should be checked before merging. The suite mocks NASA FIRMS; it does not replace one real fetch with the user's own key.
+**CI verified:** GitHub Actions passed on the branch tip `21cabc2806b1e77ffec0685dfe3e5039354b4da9` (includes admission-slot fix, Render `startCommand: python server_3.py`, and review notes): Python compilation, all 40 Python tests, and the frontend date tests. The suite mocks NASA FIRMS; it does not replace one real fetch with the user's own key. A real MAP_KEY fetch was confirmed locally by the developer before merge consideration.
