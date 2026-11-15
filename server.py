@@ -17,6 +17,7 @@ import ssl
 import http.server
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
@@ -123,14 +124,20 @@ def fetch_area(key, source, area, days, start):
 
 class FirePulseHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/health':
+        # Ignore query strings when routing (e.g. /?utm_source=...).
+        request_path = urlsplit(self.path).path
+        if request_path == '/health':
             return self.send_text(200, 'ok')
-        if self.path == '/':
+        if request_path == '/':
             self.path = '/firepulse.html'
-        if self.path.startswith('/firms-api/'):
-            self.proxy_firms()
-        else:
-            super().do_GET()
+        elif request_path.startswith('/firms-api/'):
+            self.path = request_path
+            return self.proxy_firms()
+        super().do_GET()
+
+    def list_directory(self, path):
+        # Never expose repository files or directory contents.
+        self.send_error(404, 'Not found')
 
     def send_text(self, status, text):
         self.send_response(status)
