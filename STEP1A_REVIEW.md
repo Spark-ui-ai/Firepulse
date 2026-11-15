@@ -1,10 +1,10 @@
-# FirePulse Step 1A — hardened review candidate
+# FirePulse Step 1A + Step 1B — hardened review candidate
 
 This branch is a review candidate only. It is not merged into `main` and is not deployed to Render.
 
 ## Files
 
-- `server_3.py`: explicit route handling, strict input validation, fixed upstream error messages, shared four-worker upstream pool, two-request proxy admission limit, bounded HTTP handler threads, per-chunk response-size limit, and total upstream read deadline.
+- `server_3.py`: explicit route handling, strict input validation, header-only MAP_KEY authentication, fixed upstream error messages, shared four-worker upstream pool, two-request proxy admission limit, bounded HTTP handler threads, per-chunk response-size limit, and total upstream read deadline.
 - `firepulse.html`: patched dashboard used by `server_3.py`.
 - `firepulse_3.html`: standalone snapshot of the patched dashboard.
 - `firepulse.html.patch`: original frontend patch for review.
@@ -31,12 +31,12 @@ Then open http://localhost:8080/.
 
 The Python tests mock all NASA FIRMS traffic; they do not require a NASA API key or make upstream requests.
 
-## Known limitation — API key transport
+## API key transport — Step 1B
 
-Step 1A retains the existing URL-path API key contract so it remains compatible with the original dashboard flow. The server redacts keys from its own request-line logs and never echoes upstream bodies, but a key in a URL can still appear in browser history, developer tools, proxy/access logs, or monitoring systems. Migrate the key to a request header in a separate Step 1B before treating this as production-hardened.
+The browser sends the MAP_KEY in the `X-FIRMS-MAP-KEY` request header. The key is no longer part of the FirePulse proxy URL, so it is not placed in browser history or request-line logs. The server rejects the legacy key-in-path format. The key remains visible to the user in browser developer tools and to the browser itself; this change improves transport/logging hygiene but is not a substitute for HTTPS or a server-side secret store.
 
 ## Review status
 
 The frontend date-batching logic was exercised in the assistant's JavaScript runtime across five date ranges; all batches were contiguous, non-overlapping, and at most ten days, and the UTC source checks passed.
 
-The Python test suite has been corrected to target `server_3.py`, but still needs to be run locally using the commands above. Do not merge or deploy based only on source inspection.
+The Python test suite targets `server_3.py` and includes header-authentication cases. Run the commands above locally before merging or deploying. Automated tests do not replace one real NASA FIRMS fetch with the user's own key.
