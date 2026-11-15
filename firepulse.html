@@ -1181,11 +1181,20 @@ map.on(L.Draw.Event.CREATED, function(e) {
     east: clampLng(bounds.getEast()).toFixed(3),
     north: clampLat(bounds.getNorth()).toFixed(3),
   };
+  // A manually drawn box replaces the active preset selection.
+  document.querySelectorAll('.preset-btn[data-preset]').forEach(button => {
+    button.classList.remove('active');
+    button.setAttribute('aria-pressed', 'false');
+  });
   updateAreaDisplay();
 });
 
 map.on(L.Draw.Event.DELETED, function() {
   selectedBounds = null;
+  document.querySelectorAll('.preset-btn[data-preset]').forEach(button => {
+    button.classList.remove('active');
+    button.setAttribute('aria-pressed', 'false');
+  });
   updateAreaDisplay();
 });
 
