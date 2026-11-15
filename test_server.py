@@ -116,6 +116,25 @@ class TestRoutesAndStatic(ServerTestCase):
     def test_head_on_proxy_not_allowed(self):
         s, h, b = self.get(proxy_path(), 'HEAD')
         self.assertEqual(s, 405)
+        self.assertEqual(b, b'')
+
+    def test_http_thread_admission_rejects_overload(self):
+        httpd = server.BoundedThreadingHTTPServer(('127.0.0.1', 0), server.FirePulseHandler)
+        httpd._request_slots = threading.BoundedSemaphore(0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection('127.0.0.1', httpd.server_address[1], timeout=5)
+            conn.request('GET', '/health')
+            response = conn.getresponse()
+            self.assertEqual(response.status, 503)
+            self.assertEqual(response.getheader('Retry-After'), '5')
+            response.read()
+            conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(5)
 
 
 class TestValidators(unittest.TestCase):
