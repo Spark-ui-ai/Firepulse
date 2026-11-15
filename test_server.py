@@ -1,5 +1,5 @@
 """
-Regression tests for FirePulse server.py (Step 1A). Standard library only; no NASA key needed.
+Regression tests for FirePulse server_3.py (Step 1A). Standard library only; no NASA key needed.
 Run:  python -m unittest -v test_server
 All upstream traffic is mocked. Nothing here touches the network.
 """
@@ -15,7 +15,7 @@ import urllib.error
 from datetime import date, timedelta
 from unittest import mock
 
-import server
+import server_3 as server
 
 KEY = 'SENTINELKEY0123456789abcdef0123'      # distinctive, so any leak is detectable
 BBOX = '95,-44,155,-10'                       # Australia, corrected order
@@ -448,7 +448,7 @@ class TestLogging(ServerTestCase):
 
 
 class TestFrontendCompatibility(unittest.TestCase):
-    """Reads the real firepulse.html next to server.py and checks the contract both ways."""
+    """Reads the patched firepulse.html next to server_3.py and checks the contract both ways."""
     @classmethod
     def setUpClass(cls):
         with open(server.BASE_DIR + '/firepulse.html', encoding='utf-8') as fh:
