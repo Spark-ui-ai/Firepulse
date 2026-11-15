@@ -117,3 +117,7 @@ Fire data courtesy of **NASA FIRMS** (LANCE / EOSDIS). Imagery © Esri.
 ## 🤖 AI Usage
 
 Claude (Anthropic) helped with server configuration, documentation and drafting the presentation. All code was reviewed and tested by the author.
+
+## Deployment note
+
+The Render service serves the dashboard at `/` by routing requests to `firepulse.html`. The `/health` endpoint is used for Render health checks. If the homepage ever shows a directory listing, verify that Render has deployed the latest commit from the `main` branch.
