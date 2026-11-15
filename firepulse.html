@@ -419,6 +419,26 @@
     color: var(--ember);
   }
 
+  .map-mode-control { display:flex; gap:4px; padding:4px; border:1px solid var(--border); border-radius:9px; background:rgba(22,27,34,.94); backdrop-filter:blur(8px); }
+  .map-mode-btn { border:1px solid transparent; border-radius:6px; padding:7px 10px; background:transparent; color:var(--text-muted); font:600 12px var(--font); cursor:pointer; }
+  .map-mode-btn.active { color:white; background:rgba(248,81,73,.2); border-color:rgba(248,81,73,.55); }
+  .map-mode-btn:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+  .map-legend { position:absolute; left:12px; bottom:22px; z-index:800; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:rgba(22,27,34,.94); color:var(--text-muted); font-size:11px; backdrop-filter:blur(8px); }
+  .map-legend strong { color:var(--text); }
+  .map-legend-scale { width:116px; height:8px; margin:7px 0 4px; border-radius:8px; background:linear-gradient(90deg,#5a1a1a,#c93030,#f85149,#ffb347); }
+  .map-legend-labels { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; }
+  .app-notice { display:none; padding:10px 12px; border:1px solid var(--border); border-left:3px solid var(--cool); border-radius:6px; background:var(--bg); color:var(--text); font-size:12px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .app-notice.visible { display:block; }
+  .app-notice.warning { border-left-color:var(--amber); }
+  .app-notice.error { border-left-color:var(--ember); }
+  .app-notice.success { border-left-color:var(--green); }
+  @media (max-width:600px) {
+    .map-overlay { left:8px; right:8px; top:8px; justify-content:space-between; gap:5px; }
+    .map-chip { padding:6px 8px; font-size:10px; }
+    .map-mode-btn { padding:7px 8px; }
+    .map-legend { left:8px; bottom:18px; }
+  }
+
   /* ── Dashboard Panels ── */
   .dashboard {
     height: 50%;
@@ -915,6 +935,8 @@
       </div>
     </div>
 
+    <div class="app-notice" id="appNotice" role="status" aria-live="polite"></div>
+
     <!-- Fetch button -->
     <button class="btn btn-primary" id="fetchBtn" onclick="fetchData()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L12 16M12 16L7 11M12 16L17 11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -963,9 +985,18 @@
     <div class="map-container">
       <div id="map"></div>
       <div class="map-overlay">
-        <div class="map-chip" id="hotspotCount" style="display:none;">
-          <strong id="mapCount">0</strong> hotspots displayed
+        <div class="map-mode-control" role="group" aria-label="Map display mode">
+          <button type="button" class="map-mode-btn active" id="heatmapModeBtn" aria-pressed="true" onclick="setMapMode('heatmap')">Heatmap</button>
+          <button type="button" class="map-mode-btn" id="pointsModeBtn" aria-pressed="false" onclick="setMapMode('points')">Points</button>
         </div>
+        <div class="map-chip" id="hotspotCount" style="display:none;">
+          <strong id="mapCount">0</strong> hotspots
+        </div>
+      </div>
+      <div class="map-legend" id="mapLegend">
+        <strong id="mapLegendTitle">Detection intensity</strong>
+        <div class="map-legend-scale"></div>
+        <div class="map-legend-labels"><span>Lower</span><span>Higher</span></div>
       </div>
     </div>
 
@@ -1058,6 +1089,8 @@ let selectedBounds = null; // {west, south, east, north}
 let allFireData = [];
 let heatLayer = null;
 let markerLayer = null;
+let mapMode = 'heatmap';
+const hotspotCanvasRenderer = L.canvas({ padding: 0.5 });
 let drawnItems = null;
 let timelineChart = null;
 let sensorChart = null;
@@ -1094,6 +1127,10 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
 L.control.attribution({ prefix: false, position: 'bottomright' })
   .addAttribution('<a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a>')
   .addTo(map);
+
+map.on('zoomend', function() {
+  if (mapMode === 'heatmap' && allFireData.length > 0) renderMap();
+});
 
 // Draw control
 drawnItems = new L.FeatureGroup();
@@ -1199,14 +1236,45 @@ function updateAreaDisplay() {
 // ═══════════════════════════════════════════
 // FETCH FIRE DATA
 // ═══════════════════════════════════════════
+function showNotice(message, type = 'info') {
+  const notice = document.getElementById('appNotice');
+  notice.textContent = message;
+  notice.className = 'app-notice visible' + (type ? ' ' + type : '');
+}
+
+function clearNotice() {
+  const notice = document.getElementById('appNotice');
+  notice.textContent = '';
+  notice.className = 'app-notice';
+}
+
+function setMapMode(mode) {
+  if (mode !== 'heatmap' && mode !== 'points') return;
+  mapMode = mode;
+  const heatBtn = document.getElementById('heatmapModeBtn');
+  const pointsBtn = document.getElementById('pointsModeBtn');
+  heatBtn.classList.toggle('active', mode === 'heatmap');
+  pointsBtn.classList.toggle('active', mode === 'points');
+  heatBtn.setAttribute('aria-pressed', String(mode === 'heatmap'));
+  pointsBtn.setAttribute('aria-pressed', String(mode === 'points'));
+  document.getElementById('mapLegendTitle').textContent =
+    mode === 'heatmap' ? 'Detection intensity' : 'Satellite detection points';
+  document.querySelector('.map-legend-scale').style.background =
+    mode === 'heatmap'
+      ? 'linear-gradient(90deg, #5a1a1a, #c93030, #f85149, #ffb347)'
+      : 'linear-gradient(90deg, #388bfd, #f0883e, #d29922)';
+  renderMap();
+}
+
 async function fetchData() {
   const apiKey = document.getElementById('apiKey').value.trim();
+  clearNotice();
   if (!apiKey) {
-    alert('Please enter your NASA FIRMS API key.');
+    showNotice('Enter your NASA FIRMS MAP_KEY to fetch satellite detections.', 'warning');
     return;
   }
   if (!selectedBounds) {
-    alert('Please draw or select an area of interest.');
+    showNotice('Draw a rectangle on the map or choose a preset region first.', 'warning');
     return;
   }
 
@@ -1215,18 +1283,18 @@ async function fetchData() {
     activeSensors.push(t.dataset.sensor);
   });
   if (activeSensors.length === 0) {
-    alert('Please select at least one sensor.');
+    showNotice('Select at least one satellite sensor.', 'warning');
     return;
   }
 
   const startDate = new Date(document.getElementById('startDate').value);
   const endDate = new Date(document.getElementById('endDate').value);
   if (isNaN(startDate) || isNaN(endDate)) {
-    alert('Please set valid start and end dates.');
+    showNotice('Choose a valid start date and end date.', 'warning');
     return;
   }
   if (endDate < startDate) {
-    alert('End date must be after start date.');
+    showNotice('The end date must be on or after the start date.', 'warning');
     return;
   }
 
@@ -1321,20 +1389,23 @@ async function fetchData() {
   if (errors.length > 0 && allFireData.length === 0) {
     const isKeyIssue = errors.some(e => e.includes('Invalid API key') || e.includes('check your API key') || e.includes('earthdata'));
     if (isKeyIssue) {
-      alert('API key error — your FIRMS MAP_KEY appears to be invalid or expired.\n\nGet a free key at:\nhttps://firms.modaps.eosdis.nasa.gov/api/map_key/\n\nMake sure you copy the MAP_KEY (not your Earthdata password).');
+      showNotice('NASA FIRMS rejected the MAP_KEY. Check that you entered the MAP_KEY (not your Earthdata password), then try again. You can request a key at https://firms.modaps.eosdis.nasa.gov/api/map_key/.', 'error');
     } else {
-      alert('All requests failed:\n\n' + errors.join('\n'));
+      showNotice('All FIRMS requests failed.\n' + errors.slice(0, 6).join('\n'), 'error');
     }
     return;
   }
 
   if (allFireData.length === 0) {
-    alert('No fire data found for the selected area and date range.');
+    showNotice('No active-fire detections were returned for this area and date range. Try a wider date range or a nearby region.', 'warning');
+    document.getElementById('hotspotCount').style.display = 'none';
     return;
   }
 
   if (errors.length > 0) {
-    alert(`${errors.length} of ${totalRequests} requests failed, so the results may be incomplete.\n\n` + errors.slice(0, 5).join('\n'));
+    showNotice(`Loaded ${allFireData.length.toLocaleString()} detections, but ${errors.length} of ${totalRequests} requests failed. Results may be incomplete.\n` + errors.slice(0, 4).join('\n'), 'warning');
+  } else {
+    showNotice(`Loaded ${allFireData.length.toLocaleString()} satellite detections successfully.`, 'success');
   }
 
   // Process and render
@@ -1407,50 +1478,71 @@ function processData() {
 // MAP RENDERING
 // ═══════════════════════════════════════════
 function renderMap() {
-  if (heatLayer) map.removeLayer(heatLayer);
-  if (markerLayer) map.removeLayer(markerLayer);
+  if (heatLayer && map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+  if (markerLayer && map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
+  heatLayer = null;
+  markerLayer = null;
 
-  // Use heatmap for large datasets, markers for small
-  if (allFireData.length > 500) {
-    const heatPoints = allFireData.map(d => {
-      const intensity = d.frp ? Math.min(d.frp / 100, 1) : 0.3;
-      return [d.latitude, d.longitude, intensity];
-    });
+  if (allFireData.length === 0) return;
+
+  if (mapMode === 'heatmap') {
+    // Give every detection a visible baseline contribution. FRP adds weight,
+    // but low-FRP detections must not disappear at continental zoom levels.
+    const heatPoints = allFireData
+      .filter(d => Number.isFinite(Number(d.latitude)) && Number.isFinite(Number(d.longitude)))
+      .map(d => {
+        const frp = Number(d.frp);
+        const intensity = Number.isFinite(frp) && frp > 0
+          ? 0.58 + 0.42 * Math.min(Math.sqrt(frp / 100), 1)
+          : 0.62;
+        return [Number(d.latitude), Number(d.longitude), intensity];
+      });
+
+    const zoom = map.getZoom();
+    const radius = zoom <= 4 ? 26 : zoom <= 7 ? 21 : 15;
     heatLayer = L.heatLayer(heatPoints, {
-      radius: 15,
-      blur: 20,
-      maxZoom: 10,
+      radius,
+      blur: Math.round(radius * 0.8),
+      minOpacity: 0.38,
+      max: 1,
+      maxZoom: 8,
       gradient: {
-        0.0: '#1a1a2e',
-        0.2: '#5a1a1a',
-        0.4: '#8b2020',
-        0.6: '#c93030',
-        0.8: '#f85149',
-        1.0: '#ff6a33',
+        0.0: '#5a1a1a',
+        0.25: '#8b2020',
+        0.5: '#c93030',
+        0.72: '#f85149',
+        1.0: '#ffb347',
       }
     }).addTo(map);
-  } else {
-    markerLayer = L.layerGroup();
-    allFireData.forEach(d => {
-      const color = SENSOR_COLORS[d._sensor] || '#f85149';
-      const circle = L.circleMarker([d.latitude, d.longitude], {
-        radius: 4,
-        fillColor: color,
-        fillOpacity: 0.7,
-        color: color,
-        weight: 1,
-      });
-      circle.bindPopup(`
-        <b>${d._sensor}</b><br>
-        Date: ${d.acq_date} ${d.acq_time || ''}<br>
-        FRP: ${d.frp || '—'} MW<br>
-        Confidence: ${d.confidence || '—'}<br>
-        Lat: ${d.latitude}, Lon: ${d.longitude}
-      `);
-      markerLayer.addLayer(circle);
-    });
-    markerLayer.addTo(map);
+    return;
   }
+
+  // Canvas keeps thousands of individual, clickable detections responsive.
+  markerLayer = L.layerGroup();
+  allFireData.forEach(d => {
+    const lat = Number(d.latitude);
+    const lng = Number(d.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const color = SENSOR_COLORS[d._sensor] || '#f85149';
+    const circle = L.circleMarker([lat, lng], {
+      renderer: hotspotCanvasRenderer,
+      radius: 5,
+      fillColor: color,
+      fillOpacity: 0.9,
+      color: '#fff1e6',
+      opacity: 0.85,
+      weight: 0.7,
+    });
+    circle.bindPopup(`
+      <b>${d._sensor || 'Satellite detection'}</b><br>
+      Date: ${d.acq_date || '—'} ${d.acq_time || ''}<br>
+      FRP: ${d.frp ?? '—'} MW<br>
+      Confidence: ${d.confidence || '—'}<br>
+      Lat: ${lat.toFixed(4)}, Lon: ${lng.toFixed(4)}
+    `);
+    markerLayer.addLayer(circle);
+  });
+  markerLayer.addTo(map);
 }
 
 // ═══════════════════════════════════════════
