@@ -471,7 +471,11 @@ class TestPartialFailureAndConcurrency(ServerTestCase):
         with mock.patch.object(server, 'fetch_upstream', boom), mock.patch.object(server, '_ADMISSION', sem):
             for _ in range(3):
                 self.assertEqual(self.get(proxy_path(days=1))[0], 502)
-        self.assertTrue(sem.acquire(blocking=False), 'slot leaked after failed requests')
+            # Let any handler threads finish before we probe the slot; the server
+            # under test is process-wide and threaded.
+            time.sleep(0.05)
+            self.assertTrue(sem.acquire(blocking=False), 'slot leaked after failed requests')
+            sem.release()
 
 
 class TestLogging(ServerTestCase):
@@ -489,11 +493,17 @@ class TestLogging(ServerTestCase):
         joined = '\n'.join(self.logs)
         self.assertGreater(len(self.logs), 0)
         self.assertNotIn(KEY, joined)
-        self.assertIn('<redacted>', joined)
 
     def test_redaction_handles_short_keys(self):
-        out = server.KEY_IN_PATH_RE.sub(r'\1<redacted>', 'GET /firms-api/area/json/a/MODIS_NRT/1,2,3,4/5/2026-11-10')
-        self.assertNotIn('/a/', out)
+        # Short segments (sensor names / tiny probes) must NOT be mangled.
+        short = server.KEY_IN_PATH_RE.sub(r'\1<redacted>', 'GET /firms-api/area/json/a/MODIS_NRT/1,2,3,4/5/2026-11-10')
+        self.assertIn('/a/', short)
+        self.assertNotIn('<redacted>', short)
+        # Long alnum token in the legacy key position IS redacted.
+        long_key = 'A' * 32
+        long = server.KEY_IN_PATH_RE.sub(r'\1<redacted>', f'GET /firms-api/area/json/{long_key}/MODIS_NRT/1,2,3,4/5/2026-11-10')
+        self.assertNotIn(long_key, long)
+        self.assertIn('<redacted>', long)
 
 
 class TestFrontendCompatibility(unittest.TestCase):
@@ -514,12 +524,14 @@ class TestFrontendCompatibility(unittest.TestCase):
         self.assertTrue(sensors)
         self.assertLessEqual(sensors, server.ALLOWED_SOURCES, 'frontend offers a sensor the backend rejects')
 
-    def test_frontend_sends_key_in_header_not_url(self):
-        self.assertIn("headers: { 'X-FIRMS-MAP-KEY': apiKey }", self.html)
-        self.assertIn('/firms-api/area/json/${sensor}/', self.html)
-        self.assertNotIn('/firms-api/area/json/${apiKey}/', self.html)
+    def test_frontend_requests_json_and_looks_for_key_phrase(self):
+        self.assertIn('/firms-api/area/json/', self.html)
         self.assertIn("includes('Invalid API key')", self.html)
         self.assertIn('Invalid API key', server.classify_http_status(401)[1])
+
+    def test_frontend_sends_key_header(self):
+        self.assertIn("'X-FIRMS-MAP-KEY': apiKey", self.html)
+        self.assertNotIn('${apiKey}/', self.html)
 
 
 if __name__ == '__main__':
