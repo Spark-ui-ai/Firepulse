@@ -1,6 +1,6 @@
 """
 FirePulse server - serves the dashboard and proxies NASA FIRMS Area API requests (avoids CORS).
-Usage: python server.py        then open http://localhost:8080/
+Usage: python server_3.py     then open http://localhost:8080/
 
 Proxy contract (unchanged for the frontend):
   GET /firms-api/area/json/<KEY>/<SOURCE>/<west,south,east,north>/<DAYS>/<YYYY-MM-DD>
@@ -52,7 +52,7 @@ def _env_int(name, default):
 
 
 # Parsed rows cost roughly 1.2 KB of RAM each (measured locally), so keep this modest.
-MAX_UPSTREAM_MB = min(16, max(1, _env_int('FIREPULSE_MAX_UPSTREAM_MB', 8)))
+MAX_UPSTREAM_MB = min(8, max(1, _env_int('FIREPULSE_MAX_UPSTREAM_MB', 4)))
 MAX_UPSTREAM_BYTES = MAX_UPSTREAM_MB * 1024 * 1024
 
 ALLOWED_FORMATS = {'json'}                 # the dashboard only ever asks for json
