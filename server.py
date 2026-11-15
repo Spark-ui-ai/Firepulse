@@ -123,6 +123,8 @@ def fetch_area(key, source, area, days, start):
 
 class FirePulseHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
+        if self.path == '/health':
+            return self.send_text(200, 'ok')
         if self.path == '/':
             self.path = '/firepulse.html'
         if self.path.startswith('/firms-api/'):
@@ -188,7 +190,8 @@ class FirePulseHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         msg = format % args
         if '/firms-api/' in msg:
-            print(f"  [FIRMS] {msg}")
+            # Request paths contain the user's NASA FIRMS MAP_KEY; keep logs secret-free.
+            print('  [FIRMS] API request proxied')
         elif '404' not in msg:
             print(f"  [FILE]  {msg}")
 
