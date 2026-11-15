@@ -860,14 +860,20 @@
           <span class="sensor-name">MODIS</span>
           <span class="sensor-badge">Terra & Aqua</span>
         </label>
+        <label class="sensor-toggle active" data-sensor="VIIRS_SNPP_NRT">
+          <input type="checkbox" checked />
+          <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <span class="sensor-name">VIIRS S-NPP</span>
+          <span class="sensor-badge">375m</span>
+        </label>
         <label class="sensor-toggle active" data-sensor="VIIRS_NOAA20_NRT">
           <input type="checkbox" checked />
           <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <span class="sensor-name">VIIRS NOAA-20</span>
           <span class="sensor-badge">375m</span>
         </label>
-        <label class="sensor-toggle active" data-sensor="VIIRS_NOAA21_NRT">
-          <input type="checkbox" checked />
+        <label class="sensor-toggle" data-sensor="VIIRS_NOAA21_NRT">
+          <input type="checkbox" />
           <div class="sensor-check"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           <span class="sensor-name">VIIRS NOAA-21</span>
           <span class="sensor-badge">new</span>
@@ -911,7 +917,7 @@
         </div>
       </div>
       <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">
-        Fetched in 10-day batches; the proxy splits each into 5-day API calls.
+        API allows up to 10 days per batch. Longer ranges are fetched in batches automatically.
       </div>
     </div>
 
@@ -998,3 +1004,820 @@
           <div class="chart-header">
             <div>
               <div class="chart-title">Burning Activity Calendar</div>
+              <div class="chart-subtitle">Daily fire hotspot counts — darker cells indicate more burning</div>
+            </div>
+          </div>
+          <div class="calendar-heatmap" id="calendarHeatmap"></div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="chart-panel" id="panel-timeline">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Fire Activity Timeline</div>
+              <div class="chart-subtitle">Daily hotspot detections across all selected sensors</div>
+            </div>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="timelineChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Sensors breakdown -->
+        <div class="chart-panel" id="panel-sensors">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Sensor Comparison</div>
+              <div class="chart-subtitle">Contribution of each satellite sensor to total detections</div>
+            </div>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="sensorChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Anomalies -->
+        <div class="chart-panel" id="panel-anomalies">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title">Anomalous Burning Days</div>
+              <div class="chart-subtitle">Days where fire activity exceeded 2 standard deviations above the mean</div>
+            </div>
+          </div>
+          <div class="anomaly-list" id="anomalyList">
+            <div style="color:var(--text-muted);text-align:center;padding:40px;">No anomalies detected</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Heatmap Tooltip -->
+<div class="heatmap-tooltip" id="heatmapTooltip"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let selectedBounds = null; // {west, south, east, north}
+let allFireData = [];
+let heatLayer = null;
+let markerLayer = null;
+let drawnItems = null;
+let timelineChart = null;
+let sensorChart = null;
+
+const SENSOR_COLORS = {
+  'MODIS': '#388bfd',
+  'VIIRS S-NPP': '#f85149',
+  'VIIRS NOAA-20': '#f0883e',
+  'VIIRS NOAA-21': '#d29922',
+};
+
+const SENSOR_MAP = {
+  'MODIS_NRT': 'MODIS',
+  'VIIRS_SNPP_NRT': 'VIIRS S-NPP',
+  'VIIRS_NOAA20_NRT': 'VIIRS NOAA-20',
+  'VIIRS_NOAA21_NRT': 'VIIRS NOAA-21',
+};
+
+// ═══════════════════════════════════════════
+// INIT MAP
+// ═══════════════════════════════════════════
+const map = L.map('map', {
+  center: [20, 0],
+  zoom: 2,
+  zoomControl: true,
+  attributionControl: false,
+});
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: '&copy; Esri',
+}).addTo(map);
+
+L.control.attribution({ prefix: false, position: 'bottomright' })
+  .addAttribution('<a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a>')
+  .addTo(map);
+
+// Draw control
+drawnItems = new L.FeatureGroup();
+map.addLayer(drawnItems);
+
+const drawControl = new L.Control.Draw({
+  draw: {
+    rectangle: {
+      shapeOptions: {
+        color: '#f85149',
+        weight: 2,
+        fillOpacity: 0.1,
+      }
+    },
+    polygon: false,
+    polyline: false,
+    circle: false,
+    marker: false,
+    circlemarker: false,
+  },
+  edit: {
+    featureGroup: drawnItems,
+    remove: true,
+  }
+});
+map.addControl(drawControl);
+
+map.on(L.Draw.Event.CREATED, function(e) {
+  drawnItems.clearLayers();
+  drawnItems.addLayer(e.layer);
+  const bounds = e.layer.getBounds();
+  selectedBounds = {
+    west: bounds.getWest().toFixed(3),
+    south: bounds.getSouth().toFixed(3),
+    east: bounds.getEast().toFixed(3),
+    north: bounds.getNorth().toFixed(3),
+  };
+  updateAreaDisplay();
+});
+
+map.on(L.Draw.Event.DELETED, function() {
+  selectedBounds = null;
+  updateAreaDisplay();
+});
+
+// ═══════════════════════════════════════════
+// SENSOR TOGGLES
+// ═══════════════════════════════════════════
+document.querySelectorAll('.sensor-toggle').forEach(toggle => {
+  toggle.addEventListener('click', function(e) {
+    e.preventDefault(); // prevent label from also toggling the checkbox
+    this.classList.toggle('active');
+    const cb = this.querySelector('input');
+    cb.checked = !cb.checked;
+  });
+});
+
+// ═══════════════════════════════════════════
+// DATE DEFAULTS
+// ═══════════════════════════════════════════
+const today = new Date();
+const weekAgo = new Date(today);
+weekAgo.setDate(weekAgo.getDate() - 9);
+document.getElementById('endDate').value = today.toISOString().split('T')[0];
+document.getElementById('startDate').value = weekAgo.toISOString().split('T')[0];
+
+// ═══════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════
+function setPreset(w, s, e, n) {
+  selectedBounds = {
+    west: w.toString(),
+    south: s.toString(),
+    east: e.toString(),
+    north: n.toString(),
+  };
+
+  drawnItems.clearLayers();
+  const rect = L.rectangle([[s, w], [n, e]], {
+    color: '#f85149',
+    weight: 2,
+    fillOpacity: 0.1,
+  });
+  drawnItems.addLayer(rect);
+  map.fitBounds(rect.getBounds(), { padding: [30, 30] });
+  updateAreaDisplay();
+}
+
+function updateAreaDisplay() {
+  const el = document.getElementById('areaDisplay');
+  if (!selectedBounds) {
+    el.innerHTML = '<span>Draw a rectangle on the map</span>';
+    return;
+  }
+  el.innerHTML = `
+    <span>Bounding box selected</span>
+    <span class="area-coords">${selectedBounds.west}, ${selectedBounds.south} → ${selectedBounds.east}, ${selectedBounds.north}</span>
+  `;
+}
+
+// ═══════════════════════════════════════════
+// FETCH FIRE DATA
+// ═══════════════════════════════════════════
+async function fetchData() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) {
+    alert('Please enter your NASA FIRMS API key.');
+    return;
+  }
+  if (!selectedBounds) {
+    alert('Please draw or select an area of interest.');
+    return;
+  }
+
+  const activeSensors = [];
+  document.querySelectorAll('.sensor-toggle.active').forEach(t => {
+    activeSensors.push(t.dataset.sensor);
+  });
+  if (activeSensors.length === 0) {
+    alert('Please select at least one sensor.');
+    return;
+  }
+
+  const startDate = new Date(document.getElementById('startDate').value);
+  const endDate = new Date(document.getElementById('endDate').value);
+  if (isNaN(startDate) || isNaN(endDate)) {
+    alert('Please set valid start and end dates.');
+    return;
+  }
+  if (endDate < startDate) {
+    alert('End date must be after start date.');
+    return;
+  }
+
+  const fetchBtn = document.getElementById('fetchBtn');
+  fetchBtn.disabled = true;
+  fetchBtn.innerHTML = '<div class="spinner"></div><span class="loading-text">Fetching data...</span>';
+
+  const progressBar = document.getElementById('progressBar');
+  const progressFill = document.getElementById('progressFill');
+  progressBar.classList.add('active');
+
+  allFireData = [];
+  const coords = `${selectedBounds.west},${selectedBounds.south},${selectedBounds.east},${selectedBounds.north}`;
+
+  // Build date batches (max 10 days each)
+  const batches = [];
+  let current = new Date(startDate);
+  while (current <= endDate) {
+    const batchEnd = new Date(current);
+    batchEnd.setDate(batchEnd.getDate() + 9);
+    if (batchEnd > endDate) batchEnd.setTime(endDate.getTime());
+
+    const days = Math.ceil((batchEnd - current) / (1000 * 60 * 60 * 24)) + 1;
+    batches.push({
+      date: current.toISOString().split('T')[0],
+      days: Math.min(days, 10),
+    });
+
+    current = new Date(batchEnd);
+    current.setDate(current.getDate() + 1);
+  }
+
+  const totalRequests = batches.length * activeSensors.length;
+  let completedRequests = 0;
+  let errors = [];
+
+  for (const batch of batches) {
+    for (const sensor of activeSensors) {
+      try {
+        const url = `/firms-api/area/json/${apiKey}/${sensor}/${coords}/${batch.days}/${batch.date}`;
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          const text = await response.text();
+          // Detect Earthdata login redirect (bad API key)
+          if (text.includes('earthdata.nasa.gov') || text.includes('<!DOCTYPE html')) {
+            errors.push(`${sensor} ${batch.date}: ${response.status} — Invalid API key (got Earthdata login page)`);
+          } else {
+            errors.push(`${sensor} ${batch.date}: ${response.status} — ${text.slice(0, 100)}`);
+          }
+        } else {
+          const text = await response.text();
+          // Sometimes FIRMS returns 200 but with HTML (redirect page)
+          if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+            errors.push(`${sensor} ${batch.date}: Got HTML instead of JSON — check your API key`);
+          } else {
+            try {
+              const data = JSON.parse(text);
+              if (Array.isArray(data)) {
+                data.forEach(d => {
+                  d._sensor = SENSOR_MAP[sensor] || sensor;
+                  d._source = sensor;
+                });
+                allFireData = allFireData.concat(data);
+              }
+            } catch (parseErr) {
+              errors.push(`${sensor} ${batch.date}: Invalid JSON response`);
+            }
+          }
+        }
+      } catch (err) {
+        errors.push(`${sensor} ${batch.date}: ${err.message}`);
+      }
+
+      completedRequests++;
+      progressFill.style.width = `${(completedRequests / totalRequests) * 100}%`;
+      fetchBtn.querySelector('.loading-text').textContent =
+        `Fetching ${completedRequests}/${totalRequests}...`;
+    }
+  }
+
+  progressBar.classList.remove('active');
+  progressFill.style.width = '0%';
+  fetchBtn.disabled = false;
+  fetchBtn.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L12 16M12 16L7 11M12 16L17 11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    Fetch fire data
+  `;
+
+  if (errors.length > 0 && allFireData.length === 0) {
+    const isKeyIssue = errors.some(e => e.includes('Invalid API key') || e.includes('check your API key') || e.includes('earthdata'));
+    if (isKeyIssue) {
+      alert('API key error — your FIRMS MAP_KEY appears to be invalid or expired.\n\nGet a free key at:\nhttps://firms.modaps.eosdis.nasa.gov/api/map_key/\n\nMake sure you copy the MAP_KEY (not your Earthdata password).');
+    } else {
+      alert('All requests failed:\n\n' + errors.join('\n'));
+    }
+    return;
+  }
+
+  if (allFireData.length === 0) {
+    alert('No fire data found for the selected area and date range.');
+    return;
+  }
+
+  // Process and render
+  processData();
+}
+
+// ═══════════════════════════════════════════
+// PROCESS & RENDER
+// ═══════════════════════════════════════════
+function processData() {
+  document.getElementById('welcomeState').style.display = 'none';
+  document.getElementById('dashContent').style.display = '';
+  document.getElementById('statsPanel').style.display = '';
+  document.getElementById('hotspotCount').style.display = '';
+
+  // Group by date
+  const byDate = {};
+  const bySensor = {};
+  let maxFRP = 0;
+
+  allFireData.forEach(d => {
+    const date = d.acq_date;
+    if (!byDate[date]) byDate[date] = [];
+    byDate[date].push(d);
+
+    const sensor = d._sensor || 'Unknown';
+    if (!bySensor[sensor]) bySensor[sensor] = 0;
+    bySensor[sensor]++;
+
+    if (d.frp && d.frp > maxFRP) maxFRP = d.frp;
+  });
+
+  // Stats
+  const dates = Object.keys(byDate).sort();
+  const peakDate = dates.reduce((a, b) => byDate[a].length > byDate[b].length ? a : b);
+
+  document.getElementById('statTotal').textContent = allFireData.length.toLocaleString();
+  document.getElementById('statDays').textContent = dates.length;
+  document.getElementById('statPeak').textContent = formatShortDate(peakDate);
+  document.getElementById('statSensors').textContent = Object.keys(bySensor).length;
+  document.getElementById('mapCount').textContent = allFireData.length.toLocaleString();
+
+  // Sensor breakdown table
+  const breakdownEl = document.getElementById('sensorBreakdown');
+  const bodyEl = document.getElementById('sensorBreakdownBody');
+  bodyEl.innerHTML = '';
+  breakdownEl.style.display = '';
+  const total = allFireData.length;
+  Object.entries(bySensor).sort((a, b) => b[1] - a[1]).forEach(([sensor, count]) => {
+    const pct = ((count / total) * 100).toFixed(1);
+    const color = SENSOR_COLORS[sensor] || '#8b949e';
+    bodyEl.innerHTML += `
+      <tr>
+        <td><span class="sensor-dot" style="background:${color}"></span>${sensor}</td>
+        <td style="font-family:var(--mono)">${count.toLocaleString()}</td>
+        <td style="font-family:var(--mono);color:var(--text-muted)">${pct}%</td>
+      </tr>
+    `;
+  });
+
+  // Render everything
+  renderMap();
+  renderCalendar(byDate);
+  renderTimeline(byDate, dates);
+  renderSensorChart(bySensor);
+  detectAnomalies(byDate, dates);
+}
+
+// ═══════════════════════════════════════════
+// MAP RENDERING
+// ═══════════════════════════════════════════
+function renderMap() {
+  if (heatLayer) map.removeLayer(heatLayer);
+  if (markerLayer) map.removeLayer(markerLayer);
+
+  // Use heatmap for large datasets, markers for small
+  if (allFireData.length > 500) {
+    const heatPoints = allFireData.map(d => {
+      const intensity = d.frp ? Math.min(d.frp / 100, 1) : 0.3;
+      return [d.latitude, d.longitude, intensity];
+    });
+    heatLayer = L.heatLayer(heatPoints, {
+      radius: 15,
+      blur: 20,
+      maxZoom: 10,
+      gradient: {
+        0.0: '#1a1a2e',
+        0.2: '#5a1a1a',
+        0.4: '#8b2020',
+        0.6: '#c93030',
+        0.8: '#f85149',
+        1.0: '#ff6a33',
+      }
+    }).addTo(map);
+  } else {
+    markerLayer = L.layerGroup();
+    allFireData.forEach(d => {
+      const color = SENSOR_COLORS[d._sensor] || '#f85149';
+      const circle = L.circleMarker([d.latitude, d.longitude], {
+        radius: 4,
+        fillColor: color,
+        fillOpacity: 0.7,
+        color: color,
+        weight: 1,
+      });
+      circle.bindPopup(`
+        <b>${d._sensor}</b><br>
+        Date: ${d.acq_date} ${d.acq_time || ''}<br>
+        FRP: ${d.frp || '—'} MW<br>
+        Confidence: ${d.confidence || '—'}<br>
+        Lat: ${d.latitude}, Lon: ${d.longitude}
+      `);
+      markerLayer.addLayer(circle);
+    });
+    markerLayer.addTo(map);
+  }
+}
+
+// ═══════════════════════════════════════════
+// CALENDAR HEATMAP
+// ═══════════════════════════════════════════
+function renderCalendar(byDate) {
+  const container = document.getElementById('calendarHeatmap');
+  container.innerHTML = '';
+
+  const dates = Object.keys(byDate).sort();
+  if (dates.length === 0) return;
+
+  const startDate = new Date(dates[0]);
+  const endDate = new Date(dates[dates.length - 1]);
+
+  // Get counts and calculate levels
+  const dayCounts = {};
+  let maxCount = 0;
+  dates.forEach(d => {
+    dayCounts[d] = byDate[d].length;
+    if (dayCounts[d] > maxCount) maxCount = dayCounts[d];
+  });
+
+  // Anomaly threshold
+  const counts = Object.values(dayCounts);
+  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+  const std = Math.sqrt(counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length);
+  const anomalyThreshold = mean + 2 * std;
+
+  // Build month labels
+  const monthsRow = document.createElement('div');
+  monthsRow.className = 'heatmap-months';
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Build grid
+  const gridContainer = document.createElement('div');
+  gridContainer.style.display = 'flex';
+
+  // Day labels
+  const dayLabels = document.createElement('div');
+  dayLabels.className = 'heatmap-labels';
+  ['Mon','','Wed','','Fri','','Sun'].forEach(label => {
+    const el = document.createElement('div');
+    el.className = 'heatmap-day-label';
+    el.textContent = label;
+    dayLabels.appendChild(el);
+  });
+  gridContainer.appendChild(dayLabels);
+
+  const heatmapGrid = document.createElement('div');
+  heatmapGrid.className = 'heatmap-grid';
+
+  // Fill from start to end, week by week
+  let currentDate = new Date(startDate);
+  // Align to Monday
+  while (currentDate.getDay() !== 1) {
+    currentDate.setDate(currentDate.getDate() - 1);
+  }
+
+  let lastMonth = -1;
+  let weekCount = 0;
+
+  while (currentDate <= endDate || currentDate.getDay() !== 1) {
+    const week = document.createElement('div');
+    week.className = 'heatmap-week';
+
+    // Month label
+    if (currentDate.getMonth() !== lastMonth) {
+      const monthLabel = document.createElement('div');
+      monthLabel.className = 'heatmap-month-label';
+      monthLabel.textContent = monthNames[currentDate.getMonth()];
+      monthLabel.style.position = 'absolute';
+      monthLabel.style.top = '-16px';
+      monthLabel.style.left = `${weekCount * 17 + 30}px`;
+      monthLabel.style.whiteSpace = 'nowrap';
+      monthsRow.appendChild(monthLabel);
+      lastMonth = currentDate.getMonth();
+    }
+
+    for (let day = 0; day < 7; day++) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const cell = document.createElement('div');
+      cell.className = 'heatmap-cell';
+
+      if (currentDate >= startDate && currentDate <= endDate) {
+        const count = dayCounts[dateStr] || 0;
+        let level = 0;
+        if (count > 0) {
+          level = Math.min(5, Math.ceil((count / maxCount) * 5));
+        }
+        cell.setAttribute('data-level', level);
+        cell.setAttribute('data-date', dateStr);
+        cell.setAttribute('data-count', count);
+
+        if (count > anomalyThreshold && count > 0) {
+          cell.classList.add('anomaly');
+        }
+
+        // Tooltip events
+        cell.addEventListener('mouseenter', showTooltip);
+        cell.addEventListener('mouseleave', hideTooltip);
+      } else {
+        cell.style.opacity = '0.15';
+      }
+
+      week.appendChild(cell);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    heatmapGrid.appendChild(week);
+    weekCount++;
+
+    if (currentDate > endDate && currentDate.getDay() === 1) break;
+  }
+
+  gridContainer.appendChild(heatmapGrid);
+
+  // Legend
+  const legend = document.createElement('div');
+  legend.className = 'heatmap-legend';
+  legend.innerHTML = `
+    <span>Less</span>
+    <div class="legend-cell" style="background:var(--surface-raised)"></div>
+    <div class="legend-cell" style="background:#2d1616"></div>
+    <div class="legend-cell" style="background:#5a1a1a"></div>
+    <div class="legend-cell" style="background:#8b2020"></div>
+    <div class="legend-cell" style="background:#c93030"></div>
+    <div class="legend-cell" style="background:#f85149"></div>
+    <span>More</span>
+    <span style="margin-left:12px;color:var(--ember);">● Anomaly</span>
+  `;
+
+  monthsRow.style.position = 'relative';
+  monthsRow.style.height = '18px';
+  container.appendChild(monthsRow);
+  container.appendChild(gridContainer);
+  container.appendChild(legend);
+}
+
+function showTooltip(e) {
+  const tip = document.getElementById('heatmapTooltip');
+  const date = e.target.getAttribute('data-date');
+  const count = e.target.getAttribute('data-count');
+  if (!date) return;
+
+  const d = new Date(date);
+  const formatted = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+  tip.innerHTML = `${formatted}<br><strong>${parseInt(count).toLocaleString()} hotspots</strong>`;
+  tip.style.display = 'block';
+  tip.style.left = `${e.clientX + 12}px`;
+  tip.style.top = `${e.clientY - 40}px`;
+}
+
+function hideTooltip() {
+  document.getElementById('heatmapTooltip').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════
+// TIMELINE CHART
+// ═══════════════════════════════════════════
+function renderTimeline(byDate, dates) {
+  const ctx = document.getElementById('timelineChart').getContext('2d');
+
+  if (timelineChart) timelineChart.destroy();
+
+  const labels = dates;
+  const data = dates.map(d => byDate[d].length);
+
+  // Calculate moving average
+  const windowSize = Math.max(1, Math.floor(dates.length / 10));
+  const movingAvg = data.map((_, i) => {
+    const start = Math.max(0, i - Math.floor(windowSize / 2));
+    const end = Math.min(data.length, i + Math.ceil(windowSize / 2));
+    const slice = data.slice(start, end);
+    return slice.reduce((a, b) => a + b, 0) / slice.length;
+  });
+
+  timelineChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Daily hotspots',
+          data,
+          backgroundColor: data.map(v => {
+            const ratio = v / Math.max(...data);
+            if (ratio > 0.8) return '#f85149';
+            if (ratio > 0.5) return '#f0883e';
+            if (ratio > 0.2) return '#d29922';
+            return '#30363d';
+          }),
+          borderRadius: 2,
+          order: 2,
+        },
+        {
+          label: 'Trend',
+          data: movingAvg,
+          type: 'line',
+          borderColor: '#388bfd',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.4,
+          fill: false,
+          order: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 12 },
+        },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#e6edf3',
+          titleFont: { family: 'DM Sans' },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#484f58', font: { size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(48,54,61,0.3)' },
+        },
+        y: {
+          ticks: { color: '#484f58', font: { size: 10 } },
+          grid: { color: 'rgba(48,54,61,0.3)' },
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+// SENSOR CHART
+// ═══════════════════════════════════════════
+function renderSensorChart(bySensor) {
+  const ctx = document.getElementById('sensorChart').getContext('2d');
+  if (sensorChart) sensorChart.destroy();
+
+  const sensors = Object.keys(bySensor);
+  const counts = Object.values(bySensor);
+  const colors = sensors.map(s => SENSOR_COLORS[s] || '#8b949e');
+
+  sensorChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: sensors,
+      datasets: [{
+        data: counts,
+        backgroundColor: colors,
+        borderColor: '#161b22',
+        borderWidth: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#e6edf3',
+            padding: 16,
+            font: { size: 12, family: 'DM Sans' },
+            usePointStyle: true,
+            pointStyleWidth: 12,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#e6edf3',
+          bodyColor: '#e6edf3',
+          callbacks: {
+            label: function(ctx) {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = ((ctx.parsed / total) * 100).toFixed(1);
+              return ` ${ctx.label}: ${ctx.parsed.toLocaleString()} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+// ANOMALY DETECTION
+// ═══════════════════════════════════════════
+function detectAnomalies(byDate, dates) {
+  const list = document.getElementById('anomalyList');
+  list.innerHTML = '';
+
+  const counts = dates.map(d => byDate[d].length);
+  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+  const std = Math.sqrt(counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length);
+
+  if (std === 0) {
+    list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:40px;">All days have similar activity — no anomalies</div>';
+    return;
+  }
+
+  const anomalies = [];
+  dates.forEach((date, i) => {
+    const count = counts[i];
+    const zScore = (count - mean) / std;
+    if (zScore > 2) {
+      anomalies.push({ date, count, zScore, factor: (count / mean).toFixed(1) });
+    }
+  });
+
+  if (anomalies.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:40px;">No anomalous burning days detected in this period</div>';
+    return;
+  }
+
+  anomalies.sort((a, b) => b.zScore - a.zScore);
+
+  anomalies.forEach(a => {
+    const d = new Date(a.date);
+    const formatted = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const item = document.createElement('div');
+    item.className = 'anomaly-item';
+    item.innerHTML = `
+      <div class="anomaly-date">${formatted}</div>
+      <div class="anomaly-desc">${a.count.toLocaleString()} hotspots detected — ${a.factor}x the daily average</div>
+      <div class="anomaly-factor">z=${a.zScore.toFixed(1)}</div>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ═══════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.dash-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.chart-panel').forEach(p => p.classList.remove('active'));
+
+  event.target.classList.add('active');
+  document.getElementById(`panel-${tab}`).classList.add('active');
+
+  // Resize charts when switching tabs
+  if (tab === 'timeline' && timelineChart) timelineChart.resize();
+  if (tab === 'sensors' && sensorChart) sensorChart.resize();
+}
+
+// ═══════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════
+function formatShortDate(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+</script>
+</body>
+</html>
