@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FirePulse — Burning Activity Calendar</title>
+<meta name="description" content="Explore NASA satellite fire detections with interactive hotspot maps, a daily burning activity calendar, trends, sensor comparisons and anomaly detection.">
+<meta name="theme-color" content="#0d1117">
+<title>FirePulse — Burning Activity Intelligence</title>
 
 <!-- Leaflet -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
@@ -72,10 +74,20 @@
     height: 28px;
   }
 
+  .topbar-brand-copy { display: flex; flex-direction: column; gap: 1px; }
+
   .topbar-brand h1 {
     font-size: 18px;
     font-weight: 600;
     letter-spacing: -0.3px;
+    line-height: 1.15;
+  }
+
+  .topbar-brand .brand-tagline {
+    color: var(--text-muted);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 1.15px;
   }
 
   .topbar-brand span {
@@ -94,11 +106,15 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--green);
+    background: var(--amber);
     display: inline-block;
     margin-right: 4px;
-    animation: pulse 2s ease-in-out infinite;
+    vertical-align: middle;
   }
+
+  .status-dot.ready { background: var(--green); animation: pulse 2s ease-in-out infinite; }
+  .status-dot.error { background: var(--ember); }
+  .status-dot.pending { background: var(--amber); }
 
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -859,11 +875,14 @@
       <path d="M12 2C10 4 9 7 9 10c0 2 .5 3.5 1.5 5C11.5 16.5 12 17.5 12 19c0-1.5.5-2.5 1.5-4 1-1.5 1.5-3 1.5-5 0-3-1-6-3-8z" fill="#ff6a33"/>
       <path d="M10 19h4v2a1 1 0 01-1 1h-2a1 1 0 01-1-1v-2z" fill="#d29922"/>
     </svg>
-    <h1>Fire<span>Pulse</span></h1>
+    <div class="topbar-brand-copy">
+      <h1>Fire<span>Pulse</span></h1>
+      <span class="brand-tagline">BURNING ACTIVITY INTELLIGENCE</span>
+    </div>
   </div>
   <div class="topbar-meta">
-    <span><span class="status-dot"></span>NASA FIRMS Connected</span>
-    <span>SpaceApps 2026</span>
+    <span><span class="status-dot pending" id="connectionDot"></span><span id="connectionStatus" role="status" aria-live="polite">NASA FIRMS · MAP_KEY required</span></span>
+    <span>NASA Space Apps 2026</span>
   </div>
 </div>
 
@@ -875,7 +894,7 @@
     <!-- API Key -->
     <div class="panel">
       <div class="panel-title">FIRMS API Key</div>
-      <input type="password" class="api-key-input" id="apiKey" placeholder="Paste your MAP_KEY here" />
+      <input type="password" class="api-key-input" id="apiKey" placeholder="Paste your MAP_KEY here" aria-label="NASA FIRMS MAP_KEY" autocomplete="off" autocapitalize="off" spellcheck="false" />
       <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">
         Get one free at <a href="https://firms.modaps.eosdis.nasa.gov/api/map_key/" target="_blank" style="color:var(--cool);">firms.modaps.eosdis.nasa.gov</a>
       </div>
@@ -1136,7 +1155,7 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
 }).addTo(map);
 
 L.control.attribution({ prefix: false, position: 'bottomright' })
-  .addAttribution('<a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a>')
+  .addAttribution('<a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a> · <a href="https://www.esri.com/">Esri World Imagery</a>')
   .addTo(map);
 
 map.on('zoomend', function() {
@@ -1262,6 +1281,13 @@ function updateAreaDisplay() {
 // ═══════════════════════════════════════════
 // FETCH FIRE DATA
 // ═══════════════════════════════════════════
+function setConnectionStatus(message, state = 'pending') {
+  const dot = document.getElementById('connectionDot');
+  const label = document.getElementById('connectionStatus');
+  dot.className = `status-dot ${state}`;
+  label.textContent = message;
+}
+
 function showNotice(message, type = 'info') {
   const notice = document.getElementById('appNotice');
   notice.textContent = message;
@@ -1296,6 +1322,7 @@ async function fetchData() {
   const apiKey = document.getElementById('apiKey').value.trim();
   clearNotice();
   if (!apiKey) {
+    setConnectionStatus('NASA FIRMS · MAP_KEY required', 'pending');
     showNotice('Enter your NASA FIRMS MAP_KEY to fetch satellite detections.', 'warning');
     return;
   }
@@ -1324,6 +1351,7 @@ async function fetchData() {
     return;
   }
 
+  setConnectionStatus('Contacting NASA FIRMS…', 'pending');
   const fetchBtn = document.getElementById('fetchBtn');
   fetchBtn.disabled = true;
   fetchBtn.innerHTML = '<div class="spinner"></div><span class="loading-text">Fetching data...</span>';
@@ -1413,6 +1441,7 @@ async function fetchData() {
   `;
 
   if (errors.length > 0 && allFireData.length === 0) {
+    setConnectionStatus('NASA FIRMS request failed', 'error');
     const isKeyIssue = errors.some(e => e.includes('Invalid API key') || e.includes('check your API key') || e.includes('earthdata'));
     if (isKeyIssue) {
       showNotice('NASA FIRMS rejected the MAP_KEY. Check that you entered the MAP_KEY (not your Earthdata password), then try again. You can request a key at https://firms.modaps.eosdis.nasa.gov/api/map_key/.', 'error');
@@ -1425,6 +1454,7 @@ async function fetchData() {
   }
 
   if (allFireData.length === 0) {
+    setConnectionStatus('No detections returned', 'pending');
     showNotice('No active-fire detections were returned for this area and date range. Try a wider date range or a nearby region.', 'warning');
     renderMap();
     document.getElementById('hotspotCount').style.display = 'none';
@@ -1432,8 +1462,10 @@ async function fetchData() {
   }
 
   if (errors.length > 0) {
+    setConnectionStatus('Partial data loaded', 'pending');
     showNotice(`Loaded ${allFireData.length.toLocaleString()} detections, but ${errors.length} of ${totalRequests} requests failed. Results may be incomplete.\n` + errors.slice(0, 4).join('\n'), 'warning');
   } else {
+    setConnectionStatus('NASA FIRMS data loaded', 'ready');
     showNotice(`Loaded ${allFireData.length.toLocaleString()} satellite detections successfully.`, 'success');
   }
 
