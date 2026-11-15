@@ -514,7 +514,7 @@ class TestFrontendCompatibility(unittest.TestCase):
             cls.html = fh.read()
 
     def test_every_preset_passes_backend_bbox_validation(self):
-        presets = re.findall(r'setPreset\((-?\d+),(-?\d+),(-?\d+),(-?\d+)\)', self.html)
+        presets = re.findall(r"setPreset\((-?\d+),(-?\d+),(-?\d+),(-?\d+)(?:,'[a-z0-9-]+')?\)", self.html)
         self.assertEqual(len(presets), 5)
         for w, s, e, n in presets:
             server.parse_bbox(f'{w},{s},{e},{n}')   # raises BadRequest on the old Australia preset
