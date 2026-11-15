@@ -152,7 +152,8 @@ class TestHeaderAuthentication(ServerTestCase):
             with self.subTest(key=key):
                 s, h, b = self.get(proxy_path(), headers={'X-FIRMS-MAP-KEY': key})
                 self.assertEqual(s, 400)
-                self.assertNotIn(key.encode(), b)
+                if key:
+                    self.assertNotIn(key.encode(), b)
                 self.assertNoKeyLeak(b)
 
     def test_valid_key_header_reaches_upstream_but_not_url_or_logs(self):
@@ -161,6 +162,7 @@ class TestHeaderAuthentication(ServerTestCase):
             s, h, b = self.get(proxy_path())
         self.assertEqual(s, 200)
         self.assertEqual(len(calls), 1)
+        self.assertNotIn(KEY, proxy_path())
         self.assertIn('/' + KEY + '/MODIS_NRT/', calls[0])
         self.assertNoKeyLeak(b)
         self.assertFalse(any(KEY in line for line in self.logs))
