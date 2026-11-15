@@ -832,6 +832,17 @@
     background: rgba(240, 136, 62, 0.06);
   }
 
+  .preset-btn.active,
+  .preset-btn[aria-pressed="true"] {
+    border-color: var(--ember);
+    background: linear-gradient(100deg, rgba(248,81,73,.20), rgba(240,136,62,.09));
+    box-shadow: inset 3px 0 0 var(--ember), 0 0 0 1px rgba(248,81,73,.16), 0 0 16px rgba(248,81,73,.12);
+    color: #fff;
+  }
+  .preset-btn.active span,
+  .preset-btn[aria-pressed="true"] span { color: var(--text); }
+  .preset-btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
   .preset-btn span {
     color: var(--text-muted);
     font-size: 11px;
@@ -902,19 +913,19 @@
         <span>Draw a rectangle on the map</span>
       </div>
       <div class="preset-list" style="margin-bottom:12px;">
-        <button class="preset-btn" onclick="setPreset(-125,24,-66,49)">
+        <button type="button" class="preset-btn" data-preset="continental-us" aria-pressed="false" onclick="setPreset(-125,24,-66,49,'continental-us')">
           Continental US <span>contiguous 48 states</span>
         </button>
-        <button class="preset-btn" onclick="setPreset(-10,35,40,60)">
+        <button type="button" class="preset-btn" data-preset="europe" aria-pressed="false" onclick="setPreset(-10,35,40,60,'europe')">
           Europe <span>W. Europe & Mediterranean</span>
         </button>
-        <button class="preset-btn" onclick="setPreset(95,-44,155,-10)">
+        <button type="button" class="preset-btn" data-preset="australia" aria-pressed="false" onclick="setPreset(95,-44,155,-10,'australia')">
           Australia <span>continent wide</span>
         </button>
-        <button class="preset-btn" onclick="setPreset(-73,-18,-34,5)">
+        <button type="button" class="preset-btn" data-preset="amazon-basin" aria-pressed="false" onclick="setPreset(-73,-18,-34,5,'amazon-basin')">
           Amazon Basin <span>South America</span>
         </button>
-        <button class="preset-btn" onclick="setPreset(60,5,100,40)">
+        <button type="button" class="preset-btn" data-preset="south-asia" aria-pressed="false" onclick="setPreset(60,5,100,40,'south-asia')">
           South Asia <span>India & surroundings</span>
         </button>
       </div>
@@ -1202,13 +1213,19 @@ document.getElementById('startDate').value = weekAgo.toISOString().split('T')[0]
 // ═══════════════════════════════════════════
 // PRESETS
 // ═══════════════════════════════════════════
-function setPreset(w, s, e, n) {
+function setPreset(w, s, e, n, presetId = null) {
   selectedBounds = {
     west: w.toString(),
     south: s.toString(),
     east: e.toString(),
     north: n.toString(),
   };
+
+  document.querySelectorAll('.preset-btn[data-preset]').forEach(button => {
+    const active = Boolean(presetId) && button.dataset.preset === presetId;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
 
   drawnItems.clearLayers();
   const rect = L.rectangle([[s, w], [n, e]], {
