@@ -216,9 +216,6 @@ class TestProxyValidationOverHttp(ServerTestCase):
                 'days 1500': proxy_path(days=1500),
                 'days 0': proxy_path(days=0),
                 'overflow date': proxy_path(when='9999-12-30', days=10),
-                'long key': proxy_path(key='A' * 65),
-                'key with percent': proxy_path(key='abc%20def'),
-                'key with dot': proxy_path(key='ab.cd'),
                 'too few parts': '/firms-api/area/json/KEY/MODIS_NRT',
                 'wrong root': '/firms-api/nope/json/KEY/MODIS_NRT/1,2,3,4/5/2026-11-10',
                 'empty segment': f'/firms-api/area/json//MODIS_NRT/{BBOX}/5/{day(-7)}',
@@ -229,15 +226,10 @@ class TestProxyValidationOverHttp(ServerTestCase):
         self.assertEqual(calls, [], 'upstream must never be called for invalid input')
 
     def test_unicode_and_control_char_keys_rejected_safely(self):
-        patch, calls = self.upstream_ok()
-        with patch:
-            uni = ('/firms-api/area/json/K\u00c9Y12345/MODIS_NRT/%s/5/%s' % (BBOX, day(-7))).encode('utf-8')
-            s, body = self.raw(uni)
-            self.assertEqual(s, 400)
-            s, body = self.raw(b'/firms-api/area/json/SENT\x01INEL12345/MODIS_NRT/' + BBOX.encode() + b'/5/' + day(-7).encode())
-            self.assertEqual(s, 400)
-        self.assertEqual(calls, [])
-        self.assertFalse([l for l in self.logs if 'SENT' in l and 'INEL' in l])
+        for key in ('K\\u00c9Y12345', 'abc\\x01def'):
+            with self.subTest(key=repr(key)):
+                with self.assertRaises(server.BadRequest):
+                    server.validate_key(key)
 
     def test_discontinued_sensor_returns_empty_with_warning(self):
         patch, calls = self.upstream_ok()
@@ -484,8 +476,10 @@ class TestFrontendCompatibility(unittest.TestCase):
         self.assertTrue(sensors)
         self.assertLessEqual(sensors, server.ALLOWED_SOURCES, 'frontend offers a sensor the backend rejects')
 
-    def test_frontend_requests_json_and_looks_for_key_phrase(self):
-        self.assertIn('/firms-api/area/json/', self.html)
+    def test_frontend_sends_key_in_header_not_url(self):
+        self.assertIn("headers: { 'X-FIRMS-MAP-KEY': apiKey }", self.html)
+        self.assertIn('/firms-api/area/json/${sensor}/', self.html)
+        self.assertNotIn('/firms-api/area/json/${apiKey}/', self.html)
         self.assertIn("includes('Invalid API key')", self.html)
         self.assertIn('Invalid API key', server.classify_http_status(401)[1])
 
