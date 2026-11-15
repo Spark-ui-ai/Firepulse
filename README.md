@@ -81,12 +81,16 @@ Then open **http://localhost:8080** in your browser.
 3. Choose your sensors and a date range.
 4. Click **Fetch fire data**.
 
-## ☁️ Deploy (e.g., Render)
+## ☁️ Deploy on Render
 
-`server.py` reads the `PORT` environment variable, so it runs on most Python hosts as-is:
+This repository includes a `render.yaml` Blueprint. To deploy:
 
-- **Build command:** *(none)*, or `pip install -r requirements.txt`
-- **Start command:** `python server.py`
+1. Sign in to [Render](https://render.com/) and choose **New → Blueprint**.
+2. Connect your GitHub account if prompted, then select `Spark-ui-ai/Firepulse`.
+3. Render reads `render.yaml` and creates the FirePulse web service.
+4. Wait for the first deploy to finish, then open the generated `onrender.com` URL.
+
+The server reads Render's `PORT` environment variable and exposes `/health` for deployment health checks. No Python packages are required. Enter your own NASA FIRMS MAP_KEY in the dashboard; do not commit it to GitHub.
 
 ---
 
@@ -96,6 +100,9 @@ Then open **http://localhost:8080** in your browser.
 ├── server.py          # Static file server + NASA FIRMS CORS proxy (stdlib only)
 ├── firepulse.html     # Dashboard (Leaflet, Leaflet.draw, Leaflet.heat, Chart.js via CDN)
 ├── requirements.txt   # Empty: no dependencies
+├── render.yaml        # Render Blueprint deployment config
+├── .gitignore
+├── SUBMISSION.md
 └── README.md
 ```
 
