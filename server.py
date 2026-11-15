@@ -71,7 +71,7 @@ def parse_csv(text):
 
 
 def fetch_upstream(url):
-    print(f"  [PROXY] → {url}")
+    # Do not log this URL: the FIRMS MAP_KEY is embedded in its path.
     ctx = ssl.create_default_context()
     req = urllib.request.Request(url, headers={'User-Agent': 'FirePulse/1.0'})
     try:
