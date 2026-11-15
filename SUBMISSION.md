@@ -79,7 +79,7 @@
 ### Slide 7: How It Works & What's Next
 **Lightweight, open and deployable anywhere**
 
-- **Architecture:** Browser → `server.py` (Python stdlib proxy) → NASA FIRMS Area API
+- **Architecture:** Browser → `server_3.py` (hardened Python stdlib proxy) → NASA FIRMS Area API
   - Fixes CORS · converts CSV to JSON · splits ranges into 5-day requests that run in parallel
 - **Stack:** Leaflet, Chart.js, Python `http.server`, with no other dependencies
 - **Next steps:** air-quality (AQI) overlay, CSV/PDF export, email alerts for anomalies, land-cover context
@@ -109,7 +109,7 @@ FirePulse answers *when* and *how unusually* a region is burning, not just *wher
 5. **Anomaly detection**: days with a z-score above 2 are highlighted and listed with how many times above the daily average they are.
 
 **How it works:**
-The front end (`firepulse.html`) is a single page built with Leaflet, Leaflet.draw, Leaflet.heat and Chart.js. The back end (`server.py`) uses only Python's standard library. It serves the page and works as a proxy to the FIRMS Area API, which solves the browser CORS restriction. The proxy requests CSV from FIRMS, converts it to JSON with numeric fields properly typed, and splits date ranges longer than 5 days into 5-day requests that run in parallel before merging the results. Retired sources such as Suomi NPP are handled gracefully. The app reads the `PORT` environment variable, so it can be deployed on platforms such as Render with no configuration.
+The front end (`firepulse.html`) is a single page built with Leaflet, Leaflet.draw, Leaflet.heat and Chart.js. The deployed back end (`server_3.py`) uses only Python's standard library. It accepts the FIRMS MAP_KEY only in the `X-FIRMS-MAP-KEY` header, validates request inputs, and applies bounded upstream concurrency, response-size limits and request deadlines. It serves the page and works as a proxy to the FIRMS Area API, which solves the browser CORS restriction. The proxy requests CSV from FIRMS, converts it to JSON with numeric fields properly typed, splits date ranges into bounded upstream chunks, and enforces input validation, request deadlines, response-size limits and concurrency caps. The MAP_KEY is sent in a request header, not in the URL. Retired sources such as Suomi NPP are handled gracefully. The app reads the `PORT` environment variable, so it can be deployed on platforms such as Render with no configuration.
 
 **Why it matters:**
 Agricultural residue burning, wildfires and deforestation fires harm air quality, health and ecosystems. Patterns over time, such as seasonal peaks and sudden spikes, are what decision-makers need, yet they are hidden in raw satellite data. FirePulse puts that information one click away, for free, using open NASA data.
