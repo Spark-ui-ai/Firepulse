@@ -29,7 +29,8 @@ def day(offset=-3):
 
 
 def proxy_path(key=KEY, source='MODIS_NRT', area=BBOX, days=5, when=None, fmt='json'):
-    return f'/firms-api/area/{fmt}/{key}/{source}/{area}/{days}/{when or day(-7)}'
+    # MAP_KEY is supplied separately as X-FIRMS-MAP-KEY by get().
+    return f'/firms-api/area/{fmt}/{source}/{area}/{days}/{when or day(-7)}'
 
 
 class ServerTestCase(unittest.TestCase):
@@ -52,10 +53,12 @@ class ServerTestCase(unittest.TestCase):
         self.addCleanup(p.stop)
 
     # -- helpers --
-    def get(self, path, method='GET'):
+    def get(self, path, method='GET', headers=None):
         c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=20)
         try:
-            c.request(method, path)
+            if headers is None:
+                headers = {'X-FIRMS-MAP-KEY': KEY} if path.startswith('/firms-api/') else {}
+            c.request(method, path, headers=headers)
             r = c.getresponse()
             return r.status, dict(r.getheaders()), r.read()
         finally:
@@ -135,6 +138,39 @@ class TestRoutesAndStatic(ServerTestCase):
             httpd.shutdown()
             httpd.server_close()
             thread.join(5)
+
+
+class TestHeaderAuthentication(ServerTestCase):
+    def test_missing_key_header_is_rejected(self):
+        s, h, b = self.get(proxy_path(), headers={})
+        self.assertEqual(s, 400)
+        self.assertIn(b'Missing NASA FIRMS API key header', b)
+        self.assertNotIn(KEY.encode(), b)
+
+    def test_invalid_key_header_is_rejected_without_leak(self):
+        for key in ('', 'bad key', 'a' * 65, 'ab.cd'):
+            with self.subTest(key=key):
+                s, h, b = self.get(proxy_path(), headers={'X-FIRMS-MAP-KEY': key})
+                self.assertEqual(s, 400)
+                self.assertNotIn(key.encode(), b)
+                self.assertNoKeyLeak(b)
+
+    def test_valid_key_header_reaches_upstream_but_not_url_or_logs(self):
+        patcher, calls = self.upstream_ok()
+        with patcher:
+            s, h, b = self.get(proxy_path())
+        self.assertEqual(s, 200)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('/' + KEY + '/MODIS_NRT/', calls[0])
+        self.assertNoKeyLeak(b)
+        self.assertFalse(any(KEY in line for line in self.logs))
+
+    def test_legacy_key_in_path_is_rejected(self):
+        legacy = f'/firms-api/area/json/{KEY}/MODIS_NRT/{BBOX}/5/{day(-7)}'
+        s, h, b = self.get(legacy, headers={})
+        self.assertEqual(s, 400)
+        self.assertNotIn(KEY.encode(), b)
+        self.assertFalse(any(KEY in line for line in self.logs))
 
 
 class TestValidators(unittest.TestCase):
@@ -217,7 +253,7 @@ class TestProxyValidationOverHttp(ServerTestCase):
                 'days 0': proxy_path(days=0),
                 'overflow date': proxy_path(when='9999-12-30', days=10),
                 'too few parts': '/firms-api/area/json/KEY/MODIS_NRT',
-                'wrong root': '/firms-api/nope/json/KEY/MODIS_NRT/1,2,3,4/5/2026-11-10',
+                'wrong root': '/firms-api/nope/json/MODIS_NRT/1,2,3,4/5/2026-11-10',
                 'empty segment': f'/firms-api/area/json//MODIS_NRT/{BBOX}/5/{day(-7)}',
             }
             for name, path in cases.items():
@@ -443,7 +479,7 @@ class TestLogging(ServerTestCase):
             self.get(proxy_path())
             self.get(proxy_path(area='bad'))
             self.get(proxy_path(source='VIIRS_SNPP_NRT'))
-            self.get(f'//firms-api/area/json/{KEY}/MODIS_NRT/{BBOX}/5/{day(-7)}')   # not even routed
+            self.get(f'//firms-api/area/json/{KEY}/MODIS_NRT/{BBOX}/5/{day(-7)}', headers={})   # malformed legacy URL, still redacted
         def boom(url):
             raise server.UpstreamError(401, 'Invalid API key (rejected by NASA FIRMS)')
         with mock.patch.object(server, 'fetch_upstream', boom):
